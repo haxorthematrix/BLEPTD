@@ -26,6 +26,8 @@
 // =============================================================================
 // SIGNATURE STRUCTURE
 // =============================================================================
+// Order: name, category, company_id, payload_pattern[8], pattern_length,
+//        pattern_offset, service_uuid, threat_level, flags
 typedef struct {
     char name[32];                  // Human-readable device name
     uint8_t category;               // Device category (CAT_*)
@@ -39,10 +41,8 @@ typedef struct {
 } device_signature_t;
 
 // =============================================================================
-// BUILT-IN SIGNATURES
+// BLUETOOTH SIG COMPANY IDENTIFIERS
 // =============================================================================
-
-// Bluetooth SIG Company Identifiers
 #define COMPANY_APPLE           0x004C
 #define COMPANY_SAMSUNG         0x0075
 #define COMPANY_MICROSOFT       0x0006
@@ -61,262 +61,45 @@ typedef struct {
 #define COMPANY_ABBOTT          0x0618
 #define COMPANY_INSULET         0x0822
 #define COMPANY_LUXOTTICA       0x0D53
-#define COMPANY_TILE            0xFEEC  // Also 0xFEED
+#define COMPANY_TILE            0xFEEC
 #define COMPANY_TILE_ALT        0xFEED
 #define COMPANY_CHIPOLO         0xFE65
 
-// Built-in signature definitions
+// =============================================================================
+// BUILT-IN SIGNATURES
+// Format: {name, category, company_id, {pattern[8]}, pattern_len, offset, svc_uuid, threat, flags}
+// =============================================================================
 static const device_signature_t BUILTIN_SIGNATURES[] = {
-    // =========================================================================
     // TRACKERS
-    // =========================================================================
-    {
-        .name = "AirTag (Registered)",
-        .category = CAT_TRACKER,
-        .company_id = COMPANY_APPLE,
-        .payload_pattern = {0x4C, 0x00, 0x07, 0x19},
-        .pattern_length = 4,
-        .pattern_offset = 0,
-        .service_uuid = 0,
-        .threat_level = THREAT_SEVERE,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "AirTag (Unregistered)",
-        .category = CAT_TRACKER,
-        .company_id = COMPANY_APPLE,
-        .payload_pattern = {0x4C, 0x00, 0x12, 0x19},
-        .pattern_length = 4,
-        .pattern_offset = 0,
-        .service_uuid = 0,
-        .threat_level = THREAT_SEVERE,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Samsung SmartTag",
-        .category = CAT_TRACKER,
-        .company_id = COMPANY_SAMSUNG,
-        .payload_pattern = {0x75, 0x00, 0x42, 0x09, 0x01},
-        .pattern_length = 5,
-        .pattern_offset = 0,
-        .service_uuid = 0,
-        .threat_level = THREAT_SEVERE,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Samsung SmartTag2",
-        .category = CAT_TRACKER,
-        .company_id = COMPANY_SAMSUNG,
-        .payload_pattern = {0x75, 0x00, 0x42, 0x09, 0x02},
-        .pattern_length = 5,
-        .pattern_offset = 0,
-        .service_uuid = 0,
-        .threat_level = THREAT_SEVERE,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Tile",
-        .category = CAT_TRACKER,
-        .company_id = COMPANY_TILE,
-        .payload_pattern = {0xEC, 0xFE},
-        .pattern_length = 2,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_SEVERE,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Tile (Alt)",
-        .category = CAT_TRACKER,
-        .company_id = COMPANY_TILE_ALT,
-        .payload_pattern = {0xED, 0xFE},
-        .pattern_length = 2,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_SEVERE,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Chipolo",
-        .category = CAT_TRACKER,
-        .company_id = COMPANY_CHIPOLO,
-        .payload_pattern = {0x65, 0xFE},
-        .pattern_length = 2,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_SEVERE,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE
-    },
+    {"AirTag (Registered)",     CAT_TRACKER, COMPANY_APPLE,    {0x4C,0x00,0x07,0x19,0,0,0,0}, 4,  0, 0, THREAT_SEVERE,   SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"AirTag (Unregistered)",   CAT_TRACKER, COMPANY_APPLE,    {0x4C,0x00,0x12,0x19,0,0,0,0}, 4,  0, 0, THREAT_SEVERE,   SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Samsung SmartTag",        CAT_TRACKER, COMPANY_SAMSUNG,  {0x75,0x00,0x42,0x09,0x01,0,0,0}, 5, 0, 0, THREAT_SEVERE, SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Samsung SmartTag2",       CAT_TRACKER, COMPANY_SAMSUNG,  {0x75,0x00,0x42,0x09,0x02,0,0,0}, 5, 0, 0, THREAT_SEVERE, SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Tile",                    CAT_TRACKER, COMPANY_TILE,     {0xEC,0xFE,0,0,0,0,0,0}, 2, -1, 0, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Tile (Alt)",              CAT_TRACKER, COMPANY_TILE_ALT, {0xED,0xFE,0,0,0,0,0,0}, 2, -1, 0, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Chipolo",                 CAT_TRACKER, COMPANY_CHIPOLO,  {0x65,0xFE,0,0,0,0,0,0}, 2, -1, 0, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
 
-    // =========================================================================
     // SMART GLASSES
-    // =========================================================================
-    {
-        .name = "Meta Ray-Ban",
-        .category = CAT_GLASSES,
-        .company_id = COMPANY_META,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_CRITICAL,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Meta Ray-Ban (Tech)",
-        .category = CAT_GLASSES,
-        .company_id = COMPANY_META_TECH,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_CRITICAL,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Meta Ray-Ban (Luxottica)",
-        .category = CAT_GLASSES,
-        .company_id = COMPANY_LUXOTTICA,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_CRITICAL,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Snap Spectacles",
-        .category = CAT_GLASSES,
-        .company_id = COMPANY_SNAP,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_CRITICAL,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Amazon Echo Frames",
-        .category = CAT_GLASSES,
-        .company_id = COMPANY_AMAZON,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_HIGH,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE
-    },
-    {
-        .name = "Bose Frames",
-        .category = CAT_GLASSES,
-        .company_id = COMPANY_BOSE,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_MEDIUM,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE
-    },
+    {"Meta Ray-Ban",            CAT_GLASSES, COMPANY_META,      {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Meta Ray-Ban (Tech)",     CAT_GLASSES, COMPANY_META_TECH, {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Meta Ray-Ban (Luxottica)",CAT_GLASSES, COMPANY_LUXOTTICA, {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Snap Spectacles",         CAT_GLASSES, COMPANY_SNAP,      {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Amazon Echo Frames",      CAT_GLASSES, COMPANY_AMAZON,    {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_HIGH,     SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Bose Frames",             CAT_GLASSES, COMPANY_BOSE,      {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_MEDIUM,   SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
 
-    // =========================================================================
     // MEDICAL DEVICES
-    // =========================================================================
-    {
-        .name = "Dexcom CGM",
-        .category = CAT_MEDICAL,
-        .company_id = COMPANY_DEXCOM,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0xFEBC,
-        .threat_level = THREAT_MEDIUM,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL
-    },
-    {
-        .name = "Medtronic Device",
-        .category = CAT_MEDICAL,
-        .company_id = COMPANY_MEDTRONIC,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_MEDIUM,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL
-    },
-    {
-        .name = "Omnipod",
-        .category = CAT_MEDICAL,
-        .company_id = COMPANY_INSULET,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0x1830,
-        .threat_level = THREAT_MEDIUM,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL
-    },
-    {
-        .name = "Abbott FreeStyle",
-        .category = CAT_MEDICAL,
-        .company_id = COMPANY_ABBOTT,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_MEDIUM,
-        .flags = SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL
-    },
+    {"Dexcom CGM",              CAT_MEDICAL, COMPANY_DEXCOM,    {0,0,0,0,0,0,0,0}, 0, -1, 0xFEBC, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Medtronic Device",        CAT_MEDICAL, COMPANY_MEDTRONIC, {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Omnipod",                 CAT_MEDICAL, COMPANY_INSULET,   {0,0,0,0,0,0,0,0}, 0, -1, 0x1830, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Abbott FreeStyle",        CAT_MEDICAL, COMPANY_ABBOTT,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
 
-    // =========================================================================
     // WEARABLES
-    // =========================================================================
-    {
-        .name = "Fitbit",
-        .category = CAT_WEARABLE,
-        .company_id = COMPANY_FITBIT,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_LOW,
-        .flags = SIG_FLAG_COMPANY_ID
-    },
-    {
-        .name = "Garmin",
-        .category = CAT_WEARABLE,
-        .company_id = COMPANY_GARMIN,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_LOW,
-        .flags = SIG_FLAG_COMPANY_ID
-    },
+    {"Fitbit",                  CAT_WEARABLE, COMPANY_FITBIT,   {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Garmin",                  CAT_WEARABLE, COMPANY_GARMIN,   {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
 
-    // =========================================================================
     // AUDIO DEVICES
-    // =========================================================================
-    {
-        .name = "Sony Audio",
-        .category = CAT_AUDIO,
-        .company_id = COMPANY_SONY,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_LOW,
-        .flags = SIG_FLAG_COMPANY_ID
-    },
-    {
-        .name = "Bose Audio",
-        .category = CAT_AUDIO,
-        .company_id = COMPANY_BOSE,
-        .payload_pattern = {0},
-        .pattern_length = 0,
-        .pattern_offset = -1,
-        .service_uuid = 0,
-        .threat_level = THREAT_LOW,
-        .flags = SIG_FLAG_COMPANY_ID
-    },
+    {"Sony Audio",              CAT_AUDIO, COMPANY_SONY,        {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Bose Audio",              CAT_AUDIO, COMPANY_BOSE,        {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
 };
 
 #define BUILTIN_SIGNATURE_COUNT (sizeof(BUILTIN_SIGNATURES) / sizeof(device_signature_t))
