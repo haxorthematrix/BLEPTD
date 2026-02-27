@@ -1,0 +1,230 @@
+{
+  "version": "1.0.0",
+  "description": "BLEPTD Device Signature Database",
+  "signatures": [
+    {
+      "name": "AirTag (Registered)",
+      "category": "TRACKER",
+      "company_id": "0x004C",
+      "payload_pattern": "4C000719",
+      "pattern_offset": 0,
+      "threat_level": 4,
+      "flags": ["COMPANY_ID", "PAYLOAD", "TRANSMITTABLE"],
+      "notes": "Apple FindMy network registered tag"
+    },
+    {
+      "name": "AirTag (Unregistered)",
+      "category": "TRACKER",
+      "company_id": "0x004C",
+      "payload_pattern": "4C001219",
+      "pattern_offset": 0,
+      "threat_level": 4,
+      "flags": ["COMPANY_ID", "PAYLOAD", "TRANSMITTABLE"],
+      "notes": "Apple FindMy lost/separated mode"
+    },
+    {
+      "name": "Samsung SmartTag",
+      "category": "TRACKER",
+      "company_id": "0x0075",
+      "payload_pattern": "7500420901",
+      "pattern_offset": 0,
+      "threat_level": 4,
+      "flags": ["COMPANY_ID", "PAYLOAD", "TRANSMITTABLE"],
+      "notes": "SmartThings Find network"
+    },
+    {
+      "name": "Samsung SmartTag2",
+      "category": "TRACKER",
+      "company_id": "0x0075",
+      "payload_pattern": "7500420902",
+      "pattern_offset": 0,
+      "threat_level": 4,
+      "flags": ["COMPANY_ID", "PAYLOAD", "TRANSMITTABLE"],
+      "notes": "SmartThings Find with UWB"
+    },
+    {
+      "name": "Tile",
+      "category": "TRACKER",
+      "company_id": "0xFEEC",
+      "payload_pattern": "ECFE",
+      "pattern_offset": -1,
+      "threat_level": 4,
+      "flags": ["COMPANY_ID", "PAYLOAD", "TRANSMITTABLE"],
+      "notes": "Tile tracker network"
+    },
+    {
+      "name": "Tile (Alt)",
+      "category": "TRACKER",
+      "company_id": "0xFEED",
+      "payload_pattern": "EDFE",
+      "pattern_offset": -1,
+      "threat_level": 4,
+      "flags": ["COMPANY_ID", "PAYLOAD", "TRANSMITTABLE"],
+      "notes": "Tile tracker alternate signature"
+    },
+    {
+      "name": "Chipolo",
+      "category": "TRACKER",
+      "company_id": "0xFE65",
+      "payload_pattern": "65FE",
+      "pattern_offset": -1,
+      "threat_level": 4,
+      "flags": ["COMPANY_ID", "PAYLOAD", "TRANSMITTABLE"],
+      "notes": "Chipolo tracker"
+    },
+    {
+      "name": "Meta Ray-Ban",
+      "category": "GLASSES",
+      "company_id": "0x01AB",
+      "threat_level": 5,
+      "flags": ["COMPANY_ID", "TRANSMITTABLE"],
+      "notes": "Meta Platforms Inc - camera-equipped smart glasses"
+    },
+    {
+      "name": "Meta Ray-Ban (Tech)",
+      "category": "GLASSES",
+      "company_id": "0x058E",
+      "threat_level": 5,
+      "flags": ["COMPANY_ID", "TRANSMITTABLE"],
+      "notes": "Meta Platforms Technologies - camera-equipped smart glasses"
+    },
+    {
+      "name": "Meta Ray-Ban (Luxottica)",
+      "category": "GLASSES",
+      "company_id": "0x0D53",
+      "threat_level": 5,
+      "flags": ["COMPANY_ID", "TRANSMITTABLE"],
+      "notes": "Luxottica manufacturer ID - camera-equipped smart glasses"
+    },
+    {
+      "name": "Snap Spectacles",
+      "category": "GLASSES",
+      "company_id": "0x03C2",
+      "threat_level": 5,
+      "flags": ["COMPANY_ID", "TRANSMITTABLE"],
+      "notes": "Snap Inc - camera-equipped smart glasses"
+    },
+    {
+      "name": "Amazon Echo Frames",
+      "category": "GLASSES",
+      "company_id": "0x0171",
+      "threat_level": 3,
+      "flags": ["COMPANY_ID", "TRANSMITTABLE"],
+      "notes": "Amazon smart glasses with microphone"
+    },
+    {
+      "name": "Bose Frames",
+      "category": "GLASSES",
+      "company_id": "0x009E",
+      "threat_level": 2,
+      "flags": ["COMPANY_ID", "TRANSMITTABLE"],
+      "notes": "Bose audio sunglasses"
+    },
+    {
+      "name": "Razer Anzu",
+      "category": "GLASSES",
+      "company_id": "0x0532",
+      "threat_level": 2,
+      "flags": ["COMPANY_ID", "TRANSMITTABLE"],
+      "notes": "Razer smart glasses with microphone"
+    },
+    {
+      "name": "Dexcom CGM",
+      "category": "MEDICAL",
+      "company_id": "0x00D1",
+      "service_uuid": "0xFEBC",
+      "threat_level": 3,
+      "flags": ["COMPANY_ID", "SERVICE_UUID", "MEDICAL"],
+      "notes": "Dexcom continuous glucose monitor - VIP indicator"
+    },
+    {
+      "name": "Medtronic Device",
+      "category": "MEDICAL",
+      "company_id": "0x02A5",
+      "threat_level": 3,
+      "flags": ["COMPANY_ID", "MEDICAL"],
+      "notes": "Medtronic medical device (pump, pacemaker, etc)"
+    },
+    {
+      "name": "Omnipod",
+      "category": "MEDICAL",
+      "company_id": "0x0822",
+      "service_uuid": "0x1830",
+      "threat_level": 3,
+      "flags": ["COMPANY_ID", "SERVICE_UUID", "MEDICAL"],
+      "notes": "Insulet Omnipod insulin pump"
+    },
+    {
+      "name": "Abbott FreeStyle",
+      "category": "MEDICAL",
+      "company_id": "0x0618",
+      "threat_level": 3,
+      "flags": ["COMPANY_ID", "MEDICAL"],
+      "notes": "Abbott FreeStyle Libre CGM"
+    },
+    {
+      "name": "Fitbit",
+      "category": "WEARABLE",
+      "company_id": "0x0224",
+      "threat_level": 1,
+      "flags": ["COMPANY_ID"],
+      "notes": "Fitbit fitness tracker"
+    },
+    {
+      "name": "Garmin",
+      "category": "WEARABLE",
+      "company_id": "0x0087",
+      "threat_level": 1,
+      "flags": ["COMPANY_ID"],
+      "notes": "Garmin wearable device"
+    },
+    {
+      "name": "Whoop",
+      "category": "WEARABLE",
+      "company_id": "0x0969",
+      "threat_level": 1,
+      "flags": ["COMPANY_ID"],
+      "notes": "Whoop fitness band"
+    },
+    {
+      "name": "Sony Audio",
+      "category": "AUDIO",
+      "company_id": "0x012D",
+      "threat_level": 1,
+      "flags": ["COMPANY_ID"],
+      "notes": "Sony wireless audio device"
+    },
+    {
+      "name": "Bose Audio",
+      "category": "AUDIO",
+      "company_id": "0x009E",
+      "threat_level": 1,
+      "flags": ["COMPANY_ID"],
+      "notes": "Bose wireless audio device"
+    }
+  ],
+  "company_ids": {
+    "0x004C": "Apple, Inc.",
+    "0x0075": "Samsung Electronics",
+    "0x0006": "Microsoft",
+    "0x00D1": "Dexcom, Inc.",
+    "0x00E0": "Google",
+    "0x0087": "Garmin",
+    "0x009E": "Bose Corporation",
+    "0x012D": "Sony Corporation",
+    "0x0171": "Amazon.com Services",
+    "0x01AB": "Meta Platforms, Inc.",
+    "0x0224": "Fitbit, Inc.",
+    "0x02A5": "Medtronic, Inc.",
+    "0x03C2": "Snap Inc.",
+    "0x0532": "Razer Inc.",
+    "0x058E": "Meta Platforms Technologies",
+    "0x0618": "Abbott",
+    "0x0822": "Insulet Corporation",
+    "0x0969": "Whoop, Inc.",
+    "0x0D53": "Luxottica Group S.p.A.",
+    "0xFE65": "Chipolo d.o.o.",
+    "0xFEEC": "Tile, Inc.",
+    "0xFEED": "Tile, Inc."
+  }
+}
