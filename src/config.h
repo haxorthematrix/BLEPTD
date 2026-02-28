@@ -38,7 +38,7 @@
 // =============================================================================
 #define SCREEN_WIDTH    320
 #define SCREEN_HEIGHT   240
-#define SCREEN_ROTATION 0   // Landscape (CYD specific)
+#define SCREEN_ROTATION 1   // Landscape (90° rotation)
 
 // UI Layout
 #define STATUS_BAR_HEIGHT   20
