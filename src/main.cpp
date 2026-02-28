@@ -41,9 +41,15 @@ BLEScan* pBLEScan = nullptr;
 // State
 volatile bool scanning = false;
 volatile bool txActive = false;
-uint8_t currentScreen = 0; // 0=Scan, 1=Filter, 2=TX, 3=Settings
+uint8_t currentScreen = 0; // 0=Scan, 1=Filter, 2=TX, 3=Settings, 4=Detail
 uint8_t categoryFilter = DEFAULT_CATEGORY_FILTER;
 int8_t rssiThreshold = -80;
+
+// List scrolling and detail view
+int scrollOffset = 0;           // Current scroll position in device list
+int selectedDeviceIdx = -1;     // Index of device shown in detail view
+const int ITEMS_PER_PAGE = 9;   // Number of devices visible on screen
+const int ITEM_HEIGHT = 18;     // Height of each list item in pixels
 
 // Detected devices storage
 struct DetectedDevice {
@@ -81,6 +87,7 @@ void drawScanScreen();
 void drawFilterScreen();
 void drawTXScreen();
 void drawSettingsScreen();
+void drawDetailScreen();
 void processSerialCommand(const char* cmd);
 void outputDetection(const DetectedDevice* device);
 const device_signature_t* matchSignature(BLEAdvertisedDevice* device);
@@ -690,22 +697,60 @@ void drawScanScreen() {
     int y = STATUS_BAR_HEIGHT + 4;
     tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, TFT_BLACK);
 
+    // Count filtered devices
+    int filteredCount = 0;
+    for (int i = 0; i < detectedCount; i++) {
+        if (detectedDevices[i].category & categoryFilter) {
+            filteredCount++;
+        }
+    }
+
     tft.setTextDatum(TL_DATUM);
     tft.setTextFont(2);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.drawString("DETECTED DEVICES", 4, y, 2);
 
-    char countStr[16];
-    snprintf(countStr, sizeof(countStr), "[%d]", detectedCount);
+    // Show count and scroll indicator
+    char countStr[24];
+    if (filteredCount > ITEMS_PER_PAGE) {
+        snprintf(countStr, sizeof(countStr), "[%d-%d/%d]",
+                 scrollOffset + 1,
+                 min(scrollOffset + ITEMS_PER_PAGE, filteredCount),
+                 filteredCount);
+    } else {
+        snprintf(countStr, sizeof(countStr), "[%d]", filteredCount);
+    }
     tft.setTextDatum(TR_DATUM);
     tft.drawString(countStr, SCREEN_WIDTH - 4, y, 2);
 
     y += 20;
 
-    // Draw device list
+    // Draw scroll indicators if needed
+    if (filteredCount > ITEMS_PER_PAGE) {
+        if (scrollOffset > 0) {
+            // Up arrow
+            tft.fillTriangle(SCREEN_WIDTH - 15, y, SCREEN_WIDTH - 10, y - 6, SCREEN_WIDTH - 5, y, TFT_YELLOW);
+        }
+    }
+
+    // Draw device list with scrolling (only show devices matching filter)
     tft.setTextFont(1);
-    for (int i = 0; i < min(detectedCount, 8); i++) {
-        DetectedDevice* dev = &detectedDevices[i];
+    int displayed = 0;
+    int skipped = 0;
+
+    for (int deviceIdx = 0; deviceIdx < detectedCount && displayed < ITEMS_PER_PAGE; deviceIdx++) {
+        DetectedDevice* dev = &detectedDevices[deviceIdx];
+
+        // Apply category filter
+        if (!(dev->category & categoryFilter)) {
+            continue;
+        }
+
+        // Handle scroll offset
+        if (skipped < scrollOffset) {
+            skipped++;
+            continue;
+        }
 
         // Category color indicator
         uint16_t catColor = TFT_WHITE;
@@ -717,26 +762,40 @@ void drawScanScreen() {
             case CAT_AUDIO:    catColor = TFT_MAGENTA; break;
         }
 
-        tft.fillCircle(SCREEN_WIDTH - 10, y + 6, 4, catColor);
+        tft.fillCircle(SCREEN_WIDTH - 10, y + 7, 4, catColor);
 
-        // Device name and RSSI
+        // Device name with last 3 MAC octets for uniqueness
         tft.setTextDatum(TL_DATUM);
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
-        tft.drawString(dev->name, 4, y, 1);
+        char nameWithMac[48];
+        snprintf(nameWithMac, sizeof(nameWithMac), "%s %02X:%02X:%02X",
+                 dev->name, dev->mac[3], dev->mac[4], dev->mac[5]);
+        tft.drawString(nameWithMac, 4, y, 1);
 
         char rssiStr[16];
-        snprintf(rssiStr, sizeof(rssiStr), "%d dBm", dev->rssi);
+        snprintf(rssiStr, sizeof(rssiStr), "%d", dev->rssi);
         tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-        tft.drawString(rssiStr, 180, y, 1);
+        tft.drawString(rssiStr, 260, y, 1);
 
-        y += 16;
+        y += ITEM_HEIGHT;
+        displayed++;
+    }
+
+    // Draw down scroll indicator if more items below
+    if (scrollOffset + ITEMS_PER_PAGE < filteredCount) {
+        int arrowY = STATUS_BAR_HEIGHT + CONTENT_HEIGHT - 10;
+        tft.fillTriangle(SCREEN_WIDTH - 15, arrowY, SCREEN_WIDTH - 10, arrowY + 6, SCREEN_WIDTH - 5, arrowY, TFT_YELLOW);
     }
 
     // Show message if no devices
-    if (detectedCount == 0) {
+    if (filteredCount == 0) {
         tft.setTextDatum(MC_DATUM);
         tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        tft.drawString("Scanning for devices...", SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 2);
+        if (detectedCount > 0) {
+            tft.drawString("No devices match filter", SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 2);
+        } else {
+            tft.drawString("Scanning for devices...", SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 2);
+        }
     }
 }
 
@@ -971,6 +1030,134 @@ void drawSettingsScreen() {
     tft.drawString(val, 140, y);
 }
 
+void drawDetailScreen() {
+    if (selectedDeviceIdx < 0 || selectedDeviceIdx >= detectedCount) {
+        currentScreen = 0;  // Return to scan screen if invalid
+        drawScanScreen();
+        return;
+    }
+
+    DetectedDevice* dev = &detectedDevices[selectedDeviceIdx];
+
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, TFT_BLACK);
+
+    int y = STATUS_BAR_HEIGHT + 4;
+
+    // Header with close button
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("DEVICE DETAIL", 4, y, 2);
+
+    // Close button [X]
+    tft.setTextDatum(TR_DATUM);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.drawString("[X]", SCREEN_WIDTH - 4, y, 2);
+
+    y += 22;
+
+    // Device name
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.drawString(dev->name, 4, y, 2);
+    y += 20;
+
+    // Category with color
+    uint16_t catColor = TFT_WHITE;
+    const char* catName = getCategoryString(dev->category);
+    switch (dev->category) {
+        case CAT_TRACKER:  catColor = TFT_RED;     break;
+        case CAT_GLASSES:  catColor = TFT_ORANGE;  break;
+        case CAT_MEDICAL:  catColor = TFT_YELLOW;  break;
+        case CAT_WEARABLE: catColor = TFT_BLUE;    break;
+        case CAT_AUDIO:    catColor = TFT_MAGENTA; break;
+    }
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("Category:", 4, y, 1);
+    tft.setTextColor(catColor, TFT_BLACK);
+    tft.drawString(catName, 80, y, 1);
+    y += 14;
+
+    // Threat level
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("Threat:", 4, y, 1);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    char threatStr[16];
+    snprintf(threatStr, sizeof(threatStr), "%d/5", dev->threatLevel);
+    tft.drawString(threatStr, 80, y, 1);
+    // Draw threat dots
+    for (int i = 0; i < 5; i++) {
+        uint16_t dotColor = (i < dev->threatLevel) ? TFT_RED : TFT_DARKGREY;
+        tft.fillCircle(130 + i * 12, y + 4, 4, dotColor);
+    }
+    y += 16;
+
+    // MAC address
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             dev->mac[0], dev->mac[1], dev->mac[2],
+             dev->mac[3], dev->mac[4], dev->mac[5]);
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("MAC:", 4, y, 1);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(macStr, 80, y, 1);
+    y += 14;
+
+    // Company ID
+    char companyStr[12];
+    snprintf(companyStr, sizeof(companyStr), "0x%04X", dev->companyId);
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("Company ID:", 4, y, 1);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(companyStr, 80, y, 1);
+    y += 14;
+
+    // RSSI with signal strength indicator
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("RSSI:", 4, y, 1);
+    char rssiStr[16];
+    snprintf(rssiStr, sizeof(rssiStr), "%d dBm", dev->rssi);
+    uint16_t rssiColor = TFT_GREEN;
+    if (dev->rssi < -70) rssiColor = TFT_YELLOW;
+    if (dev->rssi < -85) rssiColor = TFT_RED;
+    tft.setTextColor(rssiColor, TFT_BLACK);
+    tft.drawString(rssiStr, 80, y, 1);
+    y += 14;
+
+    // Detection count
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("Detections:", 4, y, 1);
+    char countStr[16];
+    snprintf(countStr, sizeof(countStr), "%d", dev->detectionCount);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(countStr, 80, y, 1);
+    y += 14;
+
+    // First/Last seen times
+    uint32_t now = millis();
+    uint32_t firstAgo = (now - dev->firstSeen) / 1000;
+    uint32_t lastAgo = (now - dev->lastSeen) / 1000;
+
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("First seen:", 4, y, 1);
+    char timeStr[16];
+    snprintf(timeStr, sizeof(timeStr), "%lus ago", firstAgo);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(timeStr, 80, y, 1);
+    y += 14;
+
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("Last seen:", 4, y, 1);
+    snprintf(timeStr, sizeof(timeStr), "%lus ago", lastAgo);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(timeStr, 80, y, 1);
+
+    // No nav bar in detail view - just show back hint
+    tft.fillRect(0, SCREEN_HEIGHT - NAV_BAR_HEIGHT, SCREEN_WIDTH, NAV_BAR_HEIGHT, TFT_DARKGREY);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+    tft.drawString("Tap [X] or anywhere to return", SCREEN_WIDTH / 2, SCREEN_HEIGHT - NAV_BAR_HEIGHT / 2, 1);
+}
+
 // =============================================================================
 // INITIALIZATION
 // =============================================================================
@@ -1049,6 +1236,14 @@ void handleTouch() {
 
     lastTouchTime = millis();
 
+    // Handle detail view - any touch closes it
+    if (currentScreen == 4) {
+        currentScreen = 0;
+        drawScanScreen();
+        drawNavBar();
+        return;
+    }
+
     // Check if touch is in navigation bar area
     if (touchY >= SCREEN_HEIGHT - NAV_BAR_HEIGHT) {
         int tabWidth = SCREEN_WIDTH / 4;
@@ -1056,6 +1251,7 @@ void handleTouch() {
 
         if (newScreen >= 0 && newScreen <= 3 && newScreen != currentScreen) {
             currentScreen = newScreen;
+            scrollOffset = 0;  // Reset scroll when changing screens
 
             // Visual feedback - brief highlight
             int tabX = newScreen * tabWidth;
@@ -1071,7 +1267,50 @@ void handleTouch() {
                 case 2: drawTXScreen(); break;
                 case 3: drawSettingsScreen(); break;
             }
+        }
+    }
+    // Handle scan screen - device selection and scrolling
+    else if (currentScreen == 0 && touchY > STATUS_BAR_HEIGHT && detectedCount > 0) {
+        // Count filtered devices for scroll bounds
+        int filteredCount = 0;
+        for (int i = 0; i < detectedCount; i++) {
+            if (detectedDevices[i].category & categoryFilter) {
+                filteredCount++;
+            }
+        }
 
+        int listStartY = STATUS_BAR_HEIGHT + 24;
+        int listEndY = SCREEN_HEIGHT - NAV_BAR_HEIGHT;
+
+        // Check for scroll up (top 30 pixels of list area)
+        if (touchY < listStartY + 30 && scrollOffset > 0) {
+            scrollOffset = max(0, scrollOffset - ITEMS_PER_PAGE);
+            drawScanScreen();
+        }
+        // Check for scroll down (bottom 30 pixels of list area)
+        else if (touchY > listEndY - 30 && scrollOffset + ITEMS_PER_PAGE < filteredCount) {
+            scrollOffset = min(filteredCount - ITEMS_PER_PAGE, scrollOffset + ITEMS_PER_PAGE);
+            if (scrollOffset < 0) scrollOffset = 0;
+            drawScanScreen();
+        }
+        // Check for device selection (middle area)
+        else if (touchY >= listStartY && touchY < listEndY - 10 && filteredCount > 0) {
+            int itemIdx = (touchY - listStartY) / ITEM_HEIGHT;
+            int targetFilteredIdx = scrollOffset + itemIdx;
+
+            // Find the actual device index that matches this filtered position
+            int filteredIdx = 0;
+            for (int i = 0; i < detectedCount; i++) {
+                if (detectedDevices[i].category & categoryFilter) {
+                    if (filteredIdx == targetFilteredIdx) {
+                        selectedDeviceIdx = i;
+                        currentScreen = 4;  // Switch to detail view
+                        drawDetailScreen();
+                        break;
+                    }
+                    filteredIdx++;
+                }
+            }
         }
     }
     // Handle filter screen category toggles
@@ -1083,6 +1322,7 @@ void handleTouch() {
             uint8_t categories[] = {CAT_TRACKER, CAT_GLASSES, CAT_MEDICAL, CAT_WEARABLE, CAT_AUDIO};
             if (categoryIdx < 5) {
                 categoryFilter ^= categories[categoryIdx];  // Toggle bit
+                scrollOffset = 0;  // Reset scroll when filter changes
                 drawFilterScreen();
             }
         }
@@ -1161,8 +1401,11 @@ void loop() {
             case 1: drawFilterScreen(); break;
             case 2: drawTXScreen(); break;
             case 3: drawSettingsScreen(); break;
+            case 4: drawDetailScreen(); break;
         }
-        drawNavBar();
+        if (currentScreen != 4) {
+            drawNavBar();
+        }
 
         lastScreen = currentScreen;
         lastDetectedCount = detectedCount;
