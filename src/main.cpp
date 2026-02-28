@@ -957,7 +957,15 @@ void drawTXScreen() {
 
     } else {
         // No active TX - show tappable device list
-        tft.drawString("SELECT DEVICE TO TX", 4, y);
+        tft.drawString("TAP TO TX", 4, y);
+
+        // CONFUSE button (starts confusion mode with all trackers)
+        tft.fillRoundRect(TX_STOP_BTN_X, TX_STOP_BTN_Y, TX_STOP_BTN_W, TX_STOP_BTN_H, 4, TFT_MAGENTA);
+        tft.setTextColor(TFT_WHITE);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("CONFUSE", TX_STOP_BTN_X + TX_STOP_BTN_W/2, TX_STOP_BTN_Y + TX_STOP_BTN_H/2, 2);
+        tft.setTextDatum(TL_DATUM);
+
         y += 16;
 
         int txCount = txManager.getTransmittableCount();
@@ -1452,6 +1460,44 @@ void handleTouch() {
                 Serial.println("[TX] All TX stopped via touch");
             }
             txActive = false;
+            drawTXScreen();
+        }
+        // Check CONFUSE button (when idle)
+        else if (activeCount == 0 && !confusionActive &&
+                 touchX >= TX_STOP_BTN_X && touchX <= TX_STOP_BTN_X + TX_STOP_BTN_W &&
+                 touchY >= TX_STOP_BTN_Y && touchY <= TX_STOP_BTN_Y + TX_STOP_BTN_H) {
+
+            // Visual feedback
+            tft.fillRoundRect(TX_STOP_BTN_X, TX_STOP_BTN_Y, TX_STOP_BTN_W, TX_STOP_BTN_H, 4, TFT_WHITE);
+            delay(50);
+
+            // Stop any active scan
+            if (scanning) {
+                pBLEScan->stop();
+                delay(50);
+            }
+
+            // Clear any existing confusion entries and add ALL transmittable devices
+            txManager.confuseClear();
+
+            // Add all transmittable devices to confusion mode (trackers, glasses, etc.)
+            int added = 0;
+            int txCount = txManager.getTransmittableCount();
+            for (int i = 0; i < txCount; i++) {
+                const device_signature_t* sig = txManager.getTransmittableSignature(i);
+                if (sig) {
+                    txManager.confuseAdd(sig->name, 1);
+                    added++;
+                }
+            }
+
+            if (added > 0) {
+                int result = txManager.confuseStart();
+                if (result > 0) {
+                    txActive = true;
+                    Serial.printf("[TX] Confusion started via touch with %d trackers\n", added);
+                }
+            }
             drawTXScreen();
         }
         // Handle device selection (when idle)
