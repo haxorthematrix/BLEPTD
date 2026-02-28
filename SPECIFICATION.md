@@ -2,9 +2,48 @@
 ## CYD ESP32 Firmware Specification
 
 **Version:** 1.0.0-draft
-**Target Hardware:** ESP32 "Cheap Yellow Display" (CYD) 2.8" ILI9341
+**Target Hardware:** ESP32 "Cheap Yellow Display" (CYD) 2.8" ILI9341 (non-USB-C variant ESP32-2432S028R)
 **Authors:** Security Research Team
 **License:** MIT
+
+---
+
+## Implementation Status
+
+### Completed Features ✓
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Project structure | ✓ | PlatformIO setup, config.h, main.cpp |
+| Display driver | ✓ | ILI9341_2_DRIVER for non-USB-C CYD, landscape mode |
+| Touch screen | ✓ | XPT2046 on VSPI, calibrated for landscape |
+| Navigation UI | ✓ | 4-tab navigation (SCAN, FILTER, TX, SETUP) |
+| Scan screen | ✓ | Device list with category colors |
+| Filter screen | ✓ | Category toggles via touch |
+| TX screen | ✓ | Active session display, device list |
+| Settings screen | ✓ | Display-only settings info |
+| BLE scanning | ✓ | Detection with signature matching |
+| Signature database | ✓ | Built-in signatures for trackers, glasses, medical, wearables, audio |
+| Detection engine | ✓ | Company ID and payload pattern matching |
+| TX manager | ✓ | Single and multi-device transmission |
+| Confusion mode | ✓ | Multi-device broadcast with MAC rotation |
+| Serial commands | ✓ | HELP, VERSION, STATUS, SCAN, TX, CONFUSE, JSON, DISPLAY |
+| Optimized refresh | ✓ | Display only updates on content changes |
+
+### Pending Features
+
+| Feature | Priority | Notes |
+|---------|----------|-------|
+| Device detail view | Medium | Tap device to see full details |
+| List scrolling | Medium | Scroll through long device lists |
+| RSSI threshold slider | Low | Touch-adjustable on filter screen |
+| Configuration persistence | Medium | Save/load settings to flash |
+| SD card logging | Low | Export scan logs to SD |
+| Custom signature management | Low | SIG ADD/DELETE via serial |
+| Export functions | Low | SCAN EXPORT csv/json |
+| FreeRTOS tasks | Low | Multi-core task distribution |
+| Brightness control | Low | Display brightness adjustment |
+| Sound alerts | Low | Buzzer feedback |
 
 ---
 
@@ -761,7 +800,7 @@ platform = espressif32
 board = esp32dev
 framework = arduino
 monitor_speed = 115200
-upload_speed = 921600
+upload_speed = 460800
 
 lib_deps =
     bodmer/TFT_eSPI@^2.5.0
@@ -769,8 +808,9 @@ lib_deps =
     bblanchon/ArduinoJson@^6.21.0
 
 build_flags =
+    ; TFT_eSPI configuration for CYD 2.8" (non-USB-C version ESP32-2432S028R)
     -DUSER_SETUP_LOADED=1
-    -DILI9341_DRIVER=1
+    -DILI9341_2_DRIVER=1
     -DTFT_WIDTH=240
     -DTFT_HEIGHT=320
     -DTFT_MISO=12
@@ -780,6 +820,8 @@ build_flags =
     -DTFT_DC=2
     -DTFT_RST=-1
     -DTFT_BL=21
+    -DTFT_BACKLIGHT_ON=HIGH
+    -DUSE_HSPI_PORT=1
     -DTOUCH_CS=33
     -DSPI_FREQUENCY=55000000
     -DSPI_READ_FREQUENCY=20000000
@@ -788,6 +830,8 @@ build_flags =
 
 board_build.partitions = default.csv
 ```
+
+**Note:** The non-USB-C CYD variant (ESP32-2432S028R) requires `ILI9341_2_DRIVER` instead of `ILI9341_DRIVER`. Touch is handled separately via XPT2046_Touchscreen library on VSPI (CLK=25, MISO=39, MOSI=32, CS=33).
 
 ### 8.2 Memory Budget
 
