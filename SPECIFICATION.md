@@ -257,16 +257,44 @@ BLEPTD is a portable BLE (Bluetooth Low Energy) surveillance detection platform 
 
 ## 2. Hardware Platform
 
-### 2.1 Target Device: CYD 2.8"
+### 2.1 Supported CYD Models
+
+BLEPTD is designed for the **ESP32-2432S028R** - the 2.8" "Cheap Yellow Display" with **micro-USB** connector.
+
+#### Confirmed Compatible Models
+
+| Model | Display | USB | Touch | Status |
+|-------|---------|-----|-------|--------|
+| **ESP32-2432S028R** | 2.8" ILI9341 | Micro-USB | XPT2046 | **Fully Supported** |
+| ESP32-2432S028 | 2.8" ILI9341 | Micro-USB | XPT2046 | Compatible (same as above) |
+
+#### NOT Compatible (Different Hardware)
+
+| Model | Reason |
+|-------|--------|
+| ESP32-2432S028**C** | USB-C version - different display driver (ILI9341 vs ILI9341_2) |
+| ESP32-2432S024R/C | 2.4" display - different resolution |
+| ESP32-3248S035R/C | 3.5" display - different resolution and pins |
+| ESP32-8048S043/050/070 | Larger displays - completely different hardware |
+
+#### How to Identify Your CYD
+
+1. **Check the USB connector**: Must be **micro-USB** (not USB-C)
+2. **Check the board silkscreen**: Should show "ESP32-2432S028R" or similar
+3. **Display size**: 2.8 inches diagonal
+4. **Yellow PCB**: Most CYD boards have yellow solder mask
+
+### 2.2 Hardware Specifications
 
 | Component | Specification |
 |-----------|---------------|
 | MCU | ESP32-WROOM-32 (Dual-core 240MHz, 520KB SRAM) |
 | Display | 2.8" TFT LCD, 320x240 pixels, ILI9341 driver |
+| Display Driver | **ILI9341_2_DRIVER** (important for non-USB-C variant) |
 | Touch | Resistive touchscreen (XPT2046 controller) |
 | Storage | MicroSD card slot, 4MB onboard flash |
 | Connectivity | WiFi 802.11 b/g/n, Bluetooth 4.2 BLE |
-| Power | 5V USB, ~115mA typical |
+| Power | 5V USB, ~115mA typical (200mA+ when TX active) |
 | Dimensions | 50mm x 86mm |
 
 ### 2.2 Pin Assignments (Reference)
