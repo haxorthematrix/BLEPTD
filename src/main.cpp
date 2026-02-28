@@ -614,8 +614,9 @@ void processSerialCommand(const char* cmd) {
 void initDisplay() {
     tft.init();
     tft.setRotation(SCREEN_ROTATION);
-    tft.fillScreen(COLOR_BG);
-    tft.setTextColor(COLOR_FG, COLOR_BG);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextFont(1);
 
     // Set backlight
     pinMode(TFT_BL_PIN, OUTPUT);
@@ -626,111 +627,121 @@ void initDisplay() {
 }
 
 void drawStatusBar() {
-    tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, COLOR_BG);
+    tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, TFT_BLACK);
     tft.setTextDatum(TL_DATUM);
-    tft.setTextSize(1);
-    tft.setTextColor(COLOR_FG);
-    tft.drawString("BLEPTD v" BLEPTD_VERSION, 4, 4);
+    tft.setTextFont(1);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("BLEPTD v" BLEPTD_VERSION, 4, 6, 1);
 
     // Mode indicator
     String modeStr;
-    uint16_t modeColor = COLOR_FG;
+    uint16_t modeColor = TFT_WHITE;
 
     if (txManager.isConfusionActive()) {
         modeStr = "CONFUSE";
-        modeColor = COLOR_ERROR;
+        modeColor = TFT_RED;
     } else if (txManager.getActiveCount() > 0) {
         modeStr = "TX:" + String(txManager.getActiveCount());
-        modeColor = COLOR_WARNING;
+        modeColor = TFT_YELLOW;
     } else if (scanning) {
         modeStr = "SCANNING";
-        modeColor = COLOR_SUCCESS;
+        modeColor = TFT_GREEN;
     } else {
         modeStr = "IDLE";
     }
 
     tft.setTextDatum(TR_DATUM);
-    tft.setTextColor(modeColor);
-    tft.drawString(modeStr, SCREEN_WIDTH - 4, 4);
+    tft.setTextColor(modeColor, TFT_BLACK);
+    tft.drawString(modeStr, SCREEN_WIDTH - 4, 6, 1);
 }
 
 void drawNavBar() {
     int y = SCREEN_HEIGHT - NAV_BAR_HEIGHT;
-    tft.fillRect(0, y, SCREEN_WIDTH, NAV_BAR_HEIGHT, 0x2104); // Dark gray
+    tft.fillRect(0, y, SCREEN_WIDTH, NAV_BAR_HEIGHT, TFT_DARKGREY);
 
-    const char* tabs[] = {"SCAN", "FILTER", "TX", "SETTINGS"};
+    const char* tabs[] = {"SCAN", "FILTER", "TX", "SETUP"};
     int tabWidth = SCREEN_WIDTH / 4;
 
     for (int i = 0; i < 4; i++) {
         int x = i * tabWidth;
-        uint16_t color = (i == currentScreen) ? COLOR_ACCENT : COLOR_FG;
-        tft.setTextColor(color);
+        uint16_t color = (i == currentScreen) ? TFT_YELLOW : TFT_WHITE;
+        tft.setTextColor(color, TFT_DARKGREY);
         tft.setTextDatum(MC_DATUM);
-        tft.drawString(tabs[i], x + tabWidth / 2, y + NAV_BAR_HEIGHT / 2);
+        tft.drawString(tabs[i], x + tabWidth / 2, y + NAV_BAR_HEIGHT / 2, 2);
     }
 }
 
 void drawScanScreen() {
     int y = STATUS_BAR_HEIGHT + 4;
-    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, COLOR_BG);
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, TFT_BLACK);
 
     tft.setTextDatum(TL_DATUM);
-    tft.setTextColor(COLOR_FG);
-    tft.drawString("DETECTED DEVICES", 4, y);
+    tft.setTextFont(2);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("DETECTED DEVICES", 4, y, 2);
 
     char countStr[16];
     snprintf(countStr, sizeof(countStr), "[%d]", detectedCount);
     tft.setTextDatum(TR_DATUM);
-    tft.drawString(countStr, SCREEN_WIDTH - 4, y);
+    tft.drawString(countStr, SCREEN_WIDTH - 4, y, 2);
 
-    y += 16;
+    y += 20;
 
     // Draw device list
+    tft.setTextFont(1);
     for (int i = 0; i < min(detectedCount, 8); i++) {
         DetectedDevice* dev = &detectedDevices[i];
 
         // Category color indicator
-        uint16_t catColor = COLOR_FG;
+        uint16_t catColor = TFT_WHITE;
         switch (dev->category) {
-            case CAT_TRACKER:  catColor = COLOR_CAT_TRACKER;  break;
-            case CAT_GLASSES:  catColor = COLOR_CAT_GLASSES;  break;
-            case CAT_MEDICAL:  catColor = COLOR_CAT_MEDICAL;  break;
-            case CAT_WEARABLE: catColor = COLOR_CAT_WEARABLE; break;
-            case CAT_AUDIO:    catColor = COLOR_CAT_AUDIO;    break;
+            case CAT_TRACKER:  catColor = TFT_RED;     break;
+            case CAT_GLASSES:  catColor = TFT_ORANGE;  break;
+            case CAT_MEDICAL:  catColor = TFT_YELLOW;  break;
+            case CAT_WEARABLE: catColor = TFT_BLUE;    break;
+            case CAT_AUDIO:    catColor = TFT_MAGENTA; break;
         }
 
-        tft.fillCircle(SCREEN_WIDTH - 10, y + 8, 4, catColor);
+        tft.fillCircle(SCREEN_WIDTH - 10, y + 6, 4, catColor);
 
         // Device name and RSSI
         tft.setTextDatum(TL_DATUM);
-        tft.setTextColor(COLOR_FG);
-        tft.drawString(dev->name, 4, y);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString(dev->name, 4, y, 1);
 
         char rssiStr[16];
         snprintf(rssiStr, sizeof(rssiStr), "%d dBm", dev->rssi);
-        tft.drawString(rssiStr, 180, y);
+        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+        tft.drawString(rssiStr, 180, y, 1);
 
-        y += 18;
+        y += 16;
+    }
+
+    // Show message if no devices
+    if (detectedCount == 0) {
+        tft.setTextDatum(MC_DATUM);
+        tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+        tft.drawString("Scanning for devices...", SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 2);
     }
 }
 
 void drawTXScreen() {
     int y = STATUS_BAR_HEIGHT + 4;
-    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, COLOR_BG);
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, TFT_BLACK);
 
     tft.setTextDatum(TL_DATUM);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
 
     // Show active TX sessions
     int activeCount = txManager.getActiveCount();
     bool confusionActive = txManager.isConfusionActive();
 
     if (confusionActive) {
-        tft.setTextColor(COLOR_ERROR);
+        tft.setTextColor(TFT_RED);
         tft.drawString("CONFUSION MODE ACTIVE", 4, y);
         y += 16;
 
-        tft.setTextColor(COLOR_FG);
+        tft.setTextColor(TFT_WHITE);
         char statsStr[32];
         snprintf(statsStr, sizeof(statsStr), "Entries: %d  Pkts: %lu",
                  txManager.getConfusionEntryCount(),
@@ -755,11 +766,11 @@ void drawTXScreen() {
         }
 
     } else if (activeCount > 0) {
-        tft.setTextColor(COLOR_WARNING);
+        tft.setTextColor(TFT_YELLOW);
         tft.drawString("ACTIVE TRANSMISSIONS", 4, y);
         y += 16;
 
-        tft.setTextColor(COLOR_FG);
+        tft.setTextColor(TFT_WHITE);
         char statsStr[32];
         snprintf(statsStr, sizeof(statsStr), "Sessions: %d  Pkts: %lu",
                  activeCount, txManager.getTotalPacketsSent());
@@ -771,11 +782,11 @@ void drawTXScreen() {
             tx_session_t* session = txManager.getSession(i);
             if (session && session->active) {
                 // Device name
-                tft.setTextColor(COLOR_ACCENT);
+                tft.setTextColor(TFT_YELLOW);
                 tft.drawString(session->deviceName, 4, y);
 
                 // Stats on same line
-                tft.setTextColor(COLOR_FG);
+                tft.setTextColor(TFT_WHITE);
                 char statsLine[32];
                 snprintf(statsLine, sizeof(statsLine), "%lu @ %lums",
                          session->packetsSent, session->intervalMs);
@@ -797,32 +808,32 @@ void drawTXScreen() {
         tft.drawString("AVAILABLE DEVICES", 4, y);
         y += 16;
 
-        tft.setTextColor(0x8410);  // Gray
+        tft.setTextColor(TFT_DARKGREY);  // Gray
         tft.drawString("Use serial: TX START <device>", 4, y);
         y += 20;
 
-        tft.setTextColor(COLOR_FG);
+        tft.setTextColor(TFT_WHITE);
         int txCount = txManager.getTransmittableCount();
         for (int i = 0; i < min(txCount, 8); i++) {
             const device_signature_t* sig = txManager.getTransmittableSignature(i);
             if (sig) {
                 // Category color indicator
-                uint16_t catColor = COLOR_FG;
+                uint16_t catColor = TFT_WHITE;
                 switch (sig->category) {
-                    case CAT_TRACKER:  catColor = COLOR_CAT_TRACKER;  break;
-                    case CAT_GLASSES:  catColor = COLOR_CAT_GLASSES;  break;
-                    case CAT_MEDICAL:  catColor = COLOR_CAT_MEDICAL;  break;
-                    case CAT_WEARABLE: catColor = COLOR_CAT_WEARABLE; break;
-                    case CAT_AUDIO:    catColor = COLOR_CAT_AUDIO;    break;
+                    case CAT_TRACKER:  catColor = TFT_RED;  break;
+                    case CAT_GLASSES:  catColor = TFT_ORANGE;  break;
+                    case CAT_MEDICAL:  catColor = TFT_YELLOW;  break;
+                    case CAT_WEARABLE: catColor = TFT_BLUE; break;
+                    case CAT_AUDIO:    catColor = TFT_MAGENTA;    break;
                 }
                 tft.fillCircle(12, y + 6, 4, catColor);
 
-                tft.setTextColor(COLOR_FG);
+                tft.setTextColor(TFT_WHITE);
                 tft.drawString(sig->name, 22, y);
 
                 char idStr[12];
                 snprintf(idStr, sizeof(idStr), "0x%04X", sig->company_id);
-                tft.setTextColor(0x8410);
+                tft.setTextColor(TFT_DARKGREY);
                 tft.drawString(idStr, 260, y);
 
                 y += 16;
@@ -833,10 +844,10 @@ void drawTXScreen() {
 
 void drawFilterScreen() {
     int y = STATUS_BAR_HEIGHT + 4;
-    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, COLOR_BG);
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, TFT_BLACK);
 
     tft.setTextDatum(TL_DATUM);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     tft.drawString("DEVICE CATEGORIES", 4, y);
     y += 20;
 
@@ -847,11 +858,11 @@ void drawFilterScreen() {
         uint16_t color;
     };
     CatEntry categories[] = {
-        {CAT_TRACKER, "TRACKER - Tracking devices", COLOR_CAT_TRACKER},
-        {CAT_GLASSES, "GLASSES - Smart glasses", COLOR_CAT_GLASSES},
-        {CAT_MEDICAL, "MEDICAL - Medical devices", COLOR_CAT_MEDICAL},
-        {CAT_WEARABLE, "WEARABLE - Smartwatches", COLOR_CAT_WEARABLE},
-        {CAT_AUDIO, "AUDIO - Earbuds/headphones", COLOR_CAT_AUDIO},
+        {CAT_TRACKER, "TRACKER - Tracking devices", TFT_RED},
+        {CAT_GLASSES, "GLASSES - Smart glasses", TFT_ORANGE},
+        {CAT_MEDICAL, "MEDICAL - Medical devices", TFT_YELLOW},
+        {CAT_WEARABLE, "WEARABLE - Smartwatches", TFT_BLUE},
+        {CAT_AUDIO, "AUDIO - Earbuds/headphones", TFT_MAGENTA},
     };
 
     for (int i = 0; i < 5; i++) {
@@ -864,81 +875,81 @@ void drawFilterScreen() {
         }
 
         // Label
-        tft.setTextColor(enabled ? COLOR_FG : 0x8410);
+        tft.setTextColor(enabled ? TFT_WHITE : TFT_DARKGREY);
         tft.drawString(categories[i].name, 28, y + 2);
 
         y += 22;
     }
 
     y += 10;
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("RSSI Threshold:", 4, y);
     char rssiStr[16];
     snprintf(rssiStr, sizeof(rssiStr), "%d dBm", rssiThreshold);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     tft.drawString(rssiStr, 120, y);
 }
 
 void drawSettingsScreen() {
     int y = STATUS_BAR_HEIGHT + 4;
-    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, COLOR_BG);
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, TFT_BLACK);
 
     tft.setTextDatum(TL_DATUM);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     tft.drawString("SETTINGS", 4, y);
     y += 20;
 
     // Settings display
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("Scan Duration:", 4, y);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     char val[16];
     snprintf(val, sizeof(val), "%d sec", BLE_SCAN_DURATION_SEC);
     tft.drawString(val, 140, y);
     y += 18;
 
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("Scan Interval:", 4, y);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     snprintf(val, sizeof(val), "%d ms", BLE_SCAN_INTERVAL_MS);
     tft.drawString(val, 140, y);
     y += 18;
 
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("JSON Output:", 4, y);
-    tft.setTextColor(jsonOutput ? COLOR_SUCCESS : COLOR_ERROR);
+    tft.setTextColor(jsonOutput ? TFT_GREEN : TFT_RED);
     tft.drawString(jsonOutput ? "ON" : "OFF", 140, y);
     y += 18;
 
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("Serial Baud:", 4, y);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     snprintf(val, sizeof(val), "%d", SERIAL_BAUD_RATE);
     tft.drawString(val, 140, y);
     y += 28;
 
     // Stats
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     tft.drawString("STATISTICS", 4, y);
     y += 18;
 
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("Devices Detected:", 4, y);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     snprintf(val, sizeof(val), "%d", detectedCount);
     tft.drawString(val, 140, y);
     y += 18;
 
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("TX Packets:", 4, y);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     snprintf(val, sizeof(val), "%lu", txManager.getTotalPacketsSent());
     tft.drawString(val, 140, y);
     y += 18;
 
-    tft.setTextColor(0x8410);
+    tft.setTextColor(TFT_DARKGREY);
     tft.drawString("Uptime:", 4, y);
-    tft.setTextColor(COLOR_FG);
+    tft.setTextColor(TFT_WHITE);
     uint32_t uptime = millis() / 1000;
     snprintf(val, sizeof(val), "%lu:%02lu:%02lu",
              uptime / 3600, (uptime % 3600) / 60, uptime % 60);
