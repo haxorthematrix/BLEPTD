@@ -18,24 +18,221 @@
 | Display driver | ✓ | ILI9341_2_DRIVER for non-USB-C CYD, landscape mode |
 | Touch screen | ✓ | XPT2046 on VSPI, calibrated for landscape |
 | Navigation UI | ✓ | 4-tab navigation (SCAN, FILTER, TX, SETUP) |
-| Scan screen | ✓ | Device list with category colors |
+| Scan screen | ✓ | Device list with category colors, MAC address display |
 | Filter screen | ✓ | Category toggles via touch |
-| TX screen | ✓ | Active session display, device list |
+| TX screen | ✓ | Touch device selection, STOP/CONFUSE buttons |
 | Settings screen | ✓ | Display-only settings info |
-| BLE scanning | ✓ | Detection with signature matching |
-| Signature database | ✓ | Built-in signatures for trackers, glasses, medical, wearables, audio |
-| Detection engine | ✓ | Company ID and payload pattern matching |
-| TX manager | ✓ | Single and multi-device transmission |
-| Confusion mode | ✓ | Multi-device broadcast with MAC rotation |
-| Serial commands | ✓ | HELP, VERSION, STATUS, SCAN, TX, CONFUSE, JSON, DISPLAY |
-| Optimized refresh | ✓ | Display only updates on content changes |
+| Device detail view | ✓ | Tap device to see full info (MAC, RSSI, times, category) |
+| List scrolling | ✓ | Scroll through long device lists with indicators |
+| BLE scanning | ✓ | Detection with signature matching, 5-second intervals |
+| Signature database | ✓ | 54 devices: 11 trackers, 9 glasses, 18 medical, 9 wearables, 7 audio |
+| Detection engine | ✓ | Company ID, payload pattern, service UUID matching |
+| TX manager | ✓ | Single device transmission with consistent MAC per session |
+| TX touch controls | ✓ | Tap device to start TX, STOP button, detailed TX info display |
+| TX display info | ✓ | Shows device name, MAC address, company ID, category, packet count |
+| Confusion mode | ✓ | Multi-device broadcast (20 devices) with random MAC per packet |
+| CONFUSE button | ✓ | Touch button to start confusion with all transmittable devices |
+| Serial commands | ✓ | HELP, VERSION, STATUS, SCAN, TX, CONFUSE, FILTER, JSON, DISPLAY |
+| Optimized refresh | ✓ | Display only updates on content changes, TX screen 500ms refresh |
+
+### Device Signature Database
+
+| Category | Detection | Transmittable | Devices |
+|----------|-----------|---------------|---------|
+| Trackers | 11 | 11 | AirTag (2), SmartTag (2), Tile (2), Chipolo, Google, Eufy, Pebblebee, Cube |
+| Glasses | 9 | 9 | Meta Ray-Ban (3), Snap Spectacles, Echo Frames, Bose Frames, Vuzix, XREAL, TCL |
+| Medical | 18 | 0 | Diabetes (12): Dexcom, Medtronic, Omnipod, Abbott, Tandem, etc. Cardiac (4), Respiratory (2) |
+| Wearables | 9 | 0 | Fitbit, Garmin, Whoop, Oura, Polar, Suunto, Xiaomi, Amazfit, Huawei |
+| Audio | 7 | 0 | Sony, Bose, Jabra, JBL, Plantronics, Skullcandy, Bang & Olufsen |
+| **Total** | **54** | **20** | |
+
+---
+
+## Quick Start Guide
+
+### Compilation
+
+**Prerequisites:**
+- PlatformIO IDE or CLI
+- USB cable for ESP32
+
+**Build and Upload:**
+```bash
+# Clone the repository
+git clone https://github.com/haxorthematrix/BLEPTD.git
+cd BLEPTD
+
+# Build firmware
+pio run
+
+# Upload to device
+pio run -t upload
+
+# Monitor serial output
+pio device monitor
+```
+
+### Hardware Setup
+
+The firmware is designed for the **ESP32-2432S028R** (CYD 2.8" non-USB-C variant):
+- Connect via micro-USB
+- Display should show BLEPTD interface on boot
+- Touch the screen to navigate
+
+### Touch Controls
+
+**Navigation Bar (bottom of screen):**
+- **SCAN** - View detected devices
+- **FILTER** - Toggle device categories
+- **TX** - Transmit/simulate devices
+- **SETUP** - View settings
+
+**Scan Screen:**
+- Tap a device to view details
+- Scroll by tapping top/bottom of list
+- Devices show: Name, last 3 MAC octets, RSSI, category
+
+**TX Screen:**
+- Tap any device to start transmitting
+- **CONFUSE** button (purple) - Start confusion mode with all 20 transmittable devices
+- **STOP** button (red) - Stop active transmission
+- Display shows: Device name, MAC address, company ID, packet count
+
+**Filter Screen:**
+- Tap category to toggle on/off
+- Categories: TRACKER, GLASSES, MEDICAL, WEARABLE, AUDIO
+
+### Serial Commands
+
+Connect at **115200 baud**. Available commands:
+
+```
+HELP                    - Show command list
+STATUS                  - Current device status
+VERSION                 - Firmware version
+
+SCAN START              - Begin scanning
+SCAN STOP               - Stop scanning
+SCAN CLEAR              - Clear detected devices
+
+TX LIST                 - List transmittable devices
+TX START <device>       - Start transmitting (e.g., TX START AirTag)
+TX STOP <device|ALL>    - Stop transmission
+TX STATUS               - Show active transmissions
+
+CONFUSE ADD <device>    - Add device to confusion list
+CONFUSE LIST            - Show confusion entries
+CONFUSE START           - Start confusion mode
+CONFUSE STOP            - Stop confusion mode
+CONFUSE CLEAR           - Clear confusion list
+
+FILTER SET <cat> <on|off> - Toggle category filter
+FILTER LIST             - Show current filters
+
+JSON ON|OFF             - Toggle JSON output mode
+```
+
+---
+
+## Supported Devices
+
+### Trackers (11 devices) - All Transmittable
+
+| Device | Company ID | Payload Pattern | Notes |
+|--------|------------|-----------------|-------|
+| AirTag (Registered) | 0x004C | `4C 00 07 19` | Apple FindMy network |
+| AirTag (Unregistered) | 0x004C | `4C 00 12 19` | Lost/separated mode |
+| Samsung SmartTag | 0x0075 | `75 00 42 09 01` | SmartThings Find |
+| Samsung SmartTag2 | 0x0075 | `75 00 42 09 02` | UWB version |
+| Tile Tracker | 0xFEEC | `EC FE` | Multiple variants |
+| Tile (Alt) | 0xFEED | `ED FE` | Alternate ID |
+| Chipolo | 0xFE65 | `65 FE` | Chipolo ONE/CARD |
+| Google Tracker | 0x00E0 | Service: 0xFE2C | Find My Device network |
+| Eufy Tracker | 0x0757 | - | Anker ecosystem |
+| Pebblebee | 0x0822 | - | FindMy compatible |
+| Cube Tracker | 0x0843 | - | Cube devices |
+
+### Smart Glasses (9 devices) - All Transmittable
+
+| Device | Company ID | Notes |
+|--------|------------|-------|
+| Meta Ray-Ban | 0x01AB | Meta Platforms Inc - Camera glasses |
+| Meta Ray-Ban (Tech) | 0x058E | Meta Platforms Technologies |
+| Meta Ray-Ban (Luxottica) | 0x0D53 | Luxottica manufacturer |
+| Snap Spectacles | 0x03C2 | Snap Inc - Camera glasses |
+| Amazon Echo Frames | 0x0171 | Amazon - Audio glasses |
+| Bose Frames | 0x009E | Bose - Audio sunglasses |
+| Vuzix Blade | 0x077A | AR smart glasses |
+| XREAL Air | 0x0A14 | AR display glasses |
+| TCL RayNeo | 0x0992 | AR smart glasses |
+
+### Medical Devices - Diabetes (12 devices)
+
+| Device | Company ID | Service UUID | Notes |
+|--------|------------|--------------|-------|
+| Dexcom G6/G7 | 0x00D1 | 0xFEBC | Continuous glucose monitor |
+| Medtronic Pump | 0x02A5 | - | Insulin pump |
+| Omnipod | 0x0822 | 0x1830 | Insulet insulin pump |
+| Abbott FreeStyle | 0x0618 | - | Libre CGM |
+| Tandem t:slim | 0x0801 | - | Insulin pump |
+| Senseonics Eversense | 0x07E1 | - | Implantable CGM |
+| Ascensia Contour | 0x0702 | 0x1808 | Glucose meter |
+| Roche Accu-Chek | 0x0077 | 0x1808 | Glucose meter |
+| Ypsomed mylife | 0x08B4 | - | YpsoPump |
+| Bigfoot Unity | 0x093B | - | Smart pen caps |
+| Beta Bionics iLet | 0x0964 | - | Bionic pancreas |
+| LifeScan OneTouch | 0x03F0 | 0x1808 | Glucose meter |
+
+### Medical Devices - Cardiac (4 devices)
+
+| Device | Company ID | Notes |
+|--------|------------|-------|
+| Biotronik Cardiac | 0x00A3 | Pacemakers/ICDs |
+| Boston Scientific | 0x0149 | Cardiac devices |
+| AliveCor Kardia | 0x041B | Mobile ECG |
+| Zoll LifeVest | 0x0571 | Wearable defibrillator |
+
+### Medical Devices - Respiratory & Other (6 devices)
+
+| Device | Company ID | Service UUID | Notes |
+|--------|------------|--------------|-------|
+| ResMed CPAP | 0x02B5 | - | Sleep apnea |
+| Philips CPAP | 0x0030 | - | Sleep apnea |
+| Withings Health | 0x05E3 | - | Health monitors |
+| Omron BP Monitor | 0x020E | 0x1810 | Blood pressure |
+| Qardio Heart Health | 0x0415 | - | Heart monitors |
+| iHealth Devices | 0x02C1 | - | Health monitors |
+
+### Wearables (9 devices)
+
+| Device | Company ID | Notes |
+|--------|------------|-------|
+| Fitbit | 0x0224 | Fitness trackers |
+| Garmin Watch | 0x0087 | Sports watches |
+| Whoop Band | 0x0643 | Recovery tracker |
+| Oura Ring | 0x0781 | Sleep/health ring |
+| Polar Watch | 0x006B | Sports watches |
+| Suunto Watch | 0x0068 | Sports watches |
+| Xiaomi Mi Band | 0x038F | Fitness bands |
+| Amazfit Watch | 0x0157 | Smartwatches |
+| Huawei Watch | 0x027D | Smartwatches |
+
+### Audio Devices (7 devices)
+
+| Device | Company ID | Notes |
+|--------|------------|-------|
+| Sony Audio | 0x012D | Headphones/earbuds |
+| Bose Audio | 0x009E | Headphones/speakers |
+| Jabra Headset | 0x0067 | Business headsets |
+| JBL Audio | 0x0057 | Speakers/headphones |
+| Plantronics | 0x0055 | Headsets |
+| Skullcandy | 0x02A0 | Headphones/earbuds |
+| Bang & Olufsen | 0x0059 | Premium audio |
 
 ### Pending Features
 
 | Feature | Priority | Notes |
 |---------|----------|-------|
-| Device detail view | Medium | Tap device to see full details |
-| List scrolling | Medium | Scroll through long device lists |
 | RSSI threshold slider | Low | Touch-adjustable on filter screen |
 | Configuration persistence | Medium | Save/load settings to flash |
 | SD card logging | Low | Export scan logs to SD |
@@ -908,32 +1105,86 @@ This tool is designed for:
 
 ## Appendix A: Bluetooth SIG Company Identifiers Reference
 
-Common Company IDs used in this specification:
+Company IDs used in the signature database:
 
+### Major Tech Companies
 | Company ID | Company Name |
 |------------|--------------|
 | 0x004C | Apple, Inc. |
-| 0x0075 | Samsung Electronics |
 | 0x0006 | Microsoft |
-| 0x000D | Texas Instruments |
-| 0x0059 | Nordic Semiconductor |
+| 0x0075 | Samsung Electronics |
 | 0x00E0 | Google |
-| 0x0087 | Garmin |
-| 0x009E | Bose Corporation |
-| 0x00D1 | Dexcom, Inc. |
-| 0x012D | Sony Corporation |
 | 0x0171 | Amazon.com Services |
 | 0x01AB | Meta Platforms, Inc. |
-| 0x0224 | Fitbit, Inc. |
-| 0x02A5 | Medtronic, Inc. |
-| 0x03C2 | Snap Inc. |
-| 0x0532 | Razer Inc. |
 | 0x058E | Meta Platforms Technologies |
-| 0x0618 | Abbott |
-| 0x0822 | Insulet Corporation |
-| 0x0D53 | Luxottica Group S.p.A. |
-| 0xFEEC | Tile, Inc. (also 0xFEED) |
+| 0x012D | Sony Corporation |
+| 0x027D | Huawei Technologies |
+
+### Tracker Companies
+| Company ID | Company Name |
+|------------|--------------|
+| 0xFEEC | Tile, Inc. |
+| 0xFEED | Tile, Inc. (alternate) |
 | 0xFE65 | Chipolo d.o.o. |
+| 0x0757 | Eufy (Anker) |
+| 0x0843 | Cube |
+
+### Smart Glasses / AR
+| Company ID | Company Name |
+|------------|--------------|
+| 0x03C2 | Snap Inc. |
+| 0x0D53 | Luxottica Group S.p.A. |
+| 0x077A | Vuzix Corporation |
+| 0x0A14 | XREAL (formerly Nreal) |
+| 0x0992 | TCL (RayNeo) |
+
+### Medical - Diabetes
+| Company ID | Company Name |
+|------------|--------------|
+| 0x00D1 | Dexcom, Inc. |
+| 0x02A5 | Medtronic, Inc. |
+| 0x0618 | Abbott |
+| 0x0822 | Insulet Corporation (Omnipod) |
+| 0x0801 | Tandem Diabetes Care |
+| 0x07E1 | Senseonics |
+| 0x0702 | Ascensia Diabetes Care |
+| 0x0077 | Roche (Accu-Chek) |
+| 0x08B4 | Ypsomed |
+| 0x093B | Bigfoot Biomedical |
+| 0x0964 | Beta Bionics |
+| 0x03F0 | LifeScan (OneTouch) |
+
+### Medical - Cardiac & Other
+| Company ID | Company Name |
+|------------|--------------|
+| 0x00A3 | Biotronik |
+| 0x0149 | Boston Scientific |
+| 0x041B | AliveCor |
+| 0x0571 | Zoll Medical |
+| 0x02B5 | ResMed |
+| 0x0030 | Philips |
+| 0x05E3 | Withings |
+| 0x020E | Omron Healthcare |
+| 0x0415 | Qardio |
+| 0x02C1 | iHealth Labs |
+
+### Wearables & Audio
+| Company ID | Company Name |
+|------------|--------------|
+| 0x0224 | Fitbit, Inc. |
+| 0x0087 | Garmin Ltd. |
+| 0x0643 | Whoop, Inc. |
+| 0x0781 | Oura Health |
+| 0x006B | Polar Electro |
+| 0x0068 | Suunto |
+| 0x038F | Xiaomi |
+| 0x0157 | Amazfit (Huami) |
+| 0x009E | Bose Corporation |
+| 0x0067 | GN Audio (Jabra) |
+| 0x0057 | Harman (JBL) |
+| 0x0055 | Plantronics |
+| 0x02A0 | Skullcandy |
+| 0x0059 | Bang & Olufsen |
 
 Full list: https://www.bluetooth.com/specifications/assigned-numbers/company-identifiers/
 
