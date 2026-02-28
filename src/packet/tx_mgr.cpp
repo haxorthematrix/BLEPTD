@@ -27,8 +27,9 @@ TXManager::TXManager() {
 // INITIALIZATION
 // =============================================================================
 void TXManager::init() {
-    // BLE should already be initialized by main
-    // Nothing specific needed here for now
+    // BLE is already initialized by the Arduino BLE library
+    // Don't register our own GAP callback as it would override the library's
+    Serial.println("[TX] TX Manager initialized");
 }
 
 // =============================================================================
@@ -121,6 +122,7 @@ int TXManager::startTx(const char* deviceName, uint32_t intervalMs, int32_t coun
     // Find signature
     const device_signature_t* sig = findSignatureByName(deviceName);
     if (sig == nullptr) {
+        Serial.printf("[TX] Device not found: %s\n", deviceName);
         return -1;  // Device not found
     }
 
@@ -149,6 +151,11 @@ int TXManager::startTx(const char* deviceName, uint32_t intervalMs, int32_t coun
 
     // Generate initial MAC
     generateRandomMac(session->currentMac);
+
+    Serial.printf("[TX] Started TX for %s (slot %d, interval %lums, count %ld)\n",
+                  sig->name, slot, intervalMs, count);
+    Serial.printf("[TX] Company ID: 0x%04X, Pattern len: %d\n",
+                  sig->company_id, sig->pattern_length);
 
     return slot;
 }
@@ -357,13 +364,17 @@ void TXManager::transmitPacket(tx_session_t* session) {
     }
 
     // Set the random address
-    esp_ble_gap_set_rand_addr(session->currentMac);
+    esp_err_t err = esp_ble_gap_set_rand_addr(session->currentMac);
+    if (err != ESP_OK) {
+        Serial.printf("[TX] Failed to set random addr: %d\n", err);
+        return;
+    }
 
-    // Configure advertising parameters
+    // Configure advertising parameters - use faster interval for single burst
     esp_ble_adv_params_t advParams = {
-        .adv_int_min = 0x20,   // 20ms
-        .adv_int_max = 0x40,   // 40ms
-        .adv_type = ADV_TYPE_NONCONN_IND,  // Non-connectable
+        .adv_int_min = 0x20,   // 20ms (minimum allowed)
+        .adv_int_max = 0x20,   // 20ms
+        .adv_type = ADV_TYPE_NONCONN_IND,  // Non-connectable undirected
         .own_addr_type = BLE_ADDR_TYPE_RANDOM,
         .peer_addr = {0},
         .peer_addr_type = BLE_ADDR_TYPE_PUBLIC,
@@ -372,16 +383,32 @@ void TXManager::transmitPacket(tx_session_t* session) {
     };
 
     // Configure raw advertising data
-    esp_ble_gap_config_adv_data_raw(advData, advLen);
+    err = esp_ble_gap_config_adv_data_raw(advData, advLen);
+    if (err != ESP_OK) {
+        Serial.printf("[TX] Failed to config adv data: %d\n", err);
+        return;
+    }
 
-    // Start advertising briefly
-    esp_ble_gap_start_advertising(&advParams);
+    // Small delay for config to apply
+    delay(10);
 
-    // Small delay to ensure packet is sent
-    delay(5);
+    // Start advertising
+    err = esp_ble_gap_start_advertising(&advParams);
+    if (err != ESP_OK) {
+        Serial.printf("[TX] Failed to start advertising: %d\n", err);
+        return;
+    }
+
+    // Wait for advertising to start and transmit on all 3 channels
+    // BLE advertising interval is 20ms, need at least one full interval
+    // plus time to transmit on all 3 advertising channels
+    delay(30);
 
     // Stop advertising
     esp_ble_gap_stop_advertising();
+
+    // Small delay for stop to complete
+    delay(5);
 
     // Update counters
     session->packetsSent++;
@@ -418,10 +445,10 @@ void TXManager::transmitConfusionPacket() {
                 generateRandomMac(mac);
                 esp_ble_gap_set_rand_addr(mac);
 
-                // Configure advertising
+                // Configure advertising with fast interval
                 esp_ble_adv_params_t advParams = {
                     .adv_int_min = 0x20,
-                    .adv_int_max = 0x40,
+                    .adv_int_max = 0x20,
                     .adv_type = ADV_TYPE_NONCONN_IND,
                     .own_addr_type = BLE_ADDR_TYPE_RANDOM,
                     .peer_addr = {0},
@@ -431,9 +458,11 @@ void TXManager::transmitConfusionPacket() {
                 };
 
                 esp_ble_gap_config_adv_data_raw(advData, advLen);
+                delay(5);
                 esp_ble_gap_start_advertising(&advParams);
-                delay(3);
+                delay(25);  // Allow advertising on all 3 channels
                 esp_ble_gap_stop_advertising();
+                delay(5);
 
                 _totalPacketsSent++;
             }

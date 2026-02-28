@@ -458,7 +458,15 @@ void processSerialCommand(const char* cmd) {
         if (deviceName.length() == 0) {
             Serial.println("ERROR 102 Missing device name");
         } else {
-            int result = txManager.startTx(deviceName.c_str(), interval, count, true);
+            // Stop any active scan before starting TX
+            if (scanning) {
+                pBLEScan->stop();
+                delay(50);  // Give BLE stack time to stop scan
+            }
+
+            // Use consistent MAC for standard TX (randomMac=false)
+            // MAC is generated once at session start, stays same until stop
+            int result = txManager.startTx(deviceName.c_str(), interval, count, false);
             if (result >= 0) {
                 txActive = true;
                 outputTxEvent("tx_start", deviceName.c_str(), interval, count, 0);
@@ -576,6 +584,12 @@ void processSerialCommand(const char* cmd) {
         Serial.println("OK");
     }
     else if (cmdStr == "CONFUSE START") {
+        // Stop any active scan before starting confusion TX
+        if (scanning) {
+            pBLEScan->stop();
+            delay(50);
+        }
+
         int result = txManager.confuseStart();
         if (result > 0) {
             txActive = true;
@@ -799,6 +813,18 @@ void drawScanScreen() {
     }
 }
 
+// TX screen layout constants
+#define TX_LIST_START_Y     (STATUS_BAR_HEIGHT + 40)
+#define TX_ITEM_HEIGHT      18
+#define TX_ITEMS_PER_PAGE   8
+#define TX_STOP_BTN_X       220
+#define TX_STOP_BTN_Y       (STATUS_BAR_HEIGHT + 4)
+#define TX_STOP_BTN_W       90
+#define TX_STOP_BTN_H       28
+
+// TX screen scroll offset
+static int txScrollOffset = 0;
+
 void drawTXScreen() {
     int y = STATUS_BAR_HEIGHT + 4;
     tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, CONTENT_HEIGHT, TFT_BLACK);
@@ -812,105 +838,182 @@ void drawTXScreen() {
 
     if (confusionActive) {
         tft.setTextColor(TFT_RED);
-        tft.drawString("CONFUSION MODE ACTIVE", 4, y);
-        y += 16;
+        tft.drawString("CONFUSION MODE", 4, y);
 
+        // STOP button
+        tft.fillRoundRect(TX_STOP_BTN_X, TX_STOP_BTN_Y, TX_STOP_BTN_W, TX_STOP_BTN_H, 4, TFT_RED);
         tft.setTextColor(TFT_WHITE);
-        char statsStr[32];
-        snprintf(statsStr, sizeof(statsStr), "Entries: %d  Pkts: %lu",
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("STOP", TX_STOP_BTN_X + TX_STOP_BTN_W/2, TX_STOP_BTN_Y + TX_STOP_BTN_H/2, 2);
+        tft.setTextDatum(TL_DATUM);
+
+        y += 22;
+
+        // Stats
+        tft.setTextColor(TFT_WHITE);
+        char statsStr[40];
+        snprintf(statsStr, sizeof(statsStr), "Devices: %d  Total Pkts: %lu",
                  txManager.getConfusionEntryCount(),
                  txManager.getTotalPacketsSent());
         tft.drawString(statsStr, 4, y);
-        y += 20;
+        y += 16;
 
-        // List confusion entries
-        tft.drawString("Active Devices:", 4, y);
-        y += 14;
+        tft.setTextColor(TFT_CYAN);
+        tft.drawString("Broadcasting multiple device types", 4, y);
+        y += 18;
 
+        // List confusion entries with details
         int entryCount = txManager.getConfusionEntryCount();
-        for (int i = 0; i < min(entryCount, 6); i++) {
+        for (int i = 0; i < min(entryCount, 5) && y < SCREEN_HEIGHT - NAV_BAR_HEIGHT - 10; i++) {
             confusion_entry_t* entry = txManager.getConfusionEntry(i);
-            if (entry) {
+            if (entry && entry->sig) {
+                // Category color
+                uint16_t catColor = TFT_WHITE;
+                switch (entry->sig->category) {
+                    case CAT_TRACKER:  catColor = TFT_RED;     break;
+                    case CAT_GLASSES:  catColor = TFT_ORANGE;  break;
+                    case CAT_MEDICAL:  catColor = TFT_YELLOW;  break;
+                    case CAT_WEARABLE: catColor = TFT_BLUE;    break;
+                    case CAT_AUDIO:    catColor = TFT_MAGENTA; break;
+                }
+                tft.fillCircle(10, y + 6, 4, catColor);
+
                 char entryStr[48];
-                snprintf(entryStr, sizeof(entryStr), "  %s x%d",
-                         entry->deviceName, entry->instanceCount);
-                tft.drawString(entryStr, 4, y);
-                y += 14;
+                snprintf(entryStr, sizeof(entryStr), "%s (0x%04X)",
+                         entry->deviceName, entry->sig->company_id);
+                tft.setTextColor(TFT_WHITE);
+                tft.drawString(entryStr, 20, y);
+                y += 16;
             }
         }
 
     } else if (activeCount > 0) {
         tft.setTextColor(TFT_YELLOW);
-        tft.drawString("ACTIVE TRANSMISSIONS", 4, y);
-        y += 16;
+        tft.drawString("TRANSMITTING", 4, y);
 
+        // STOP ALL button
+        tft.fillRoundRect(TX_STOP_BTN_X, TX_STOP_BTN_Y, TX_STOP_BTN_W, TX_STOP_BTN_H, 4, TFT_RED);
         tft.setTextColor(TFT_WHITE);
-        char statsStr[32];
-        snprintf(statsStr, sizeof(statsStr), "Sessions: %d  Pkts: %lu",
-                 activeCount, txManager.getTotalPacketsSent());
-        tft.drawString(statsStr, 4, y);
-        y += 20;
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("STOP", TX_STOP_BTN_X + TX_STOP_BTN_W/2, TX_STOP_BTN_Y + TX_STOP_BTN_H/2, 2);
+        tft.setTextDatum(TL_DATUM);
 
-        // List active sessions
-        for (int i = 0; i < TX_MAX_CONCURRENT && y < SCREEN_HEIGHT - NAV_BAR_HEIGHT - 20; i++) {
+        y += 22;
+
+        // Show detailed info for each active session
+        for (int i = 0; i < TX_MAX_CONCURRENT && y < SCREEN_HEIGHT - NAV_BAR_HEIGHT - 10; i++) {
             tx_session_t* session = txManager.getSession(i);
-            if (session && session->active) {
-                // Device name
+            if (session && session->active && session->sig) {
+                // Device name with category color
+                uint16_t catColor = TFT_WHITE;
+                switch (session->sig->category) {
+                    case CAT_TRACKER:  catColor = TFT_RED;     break;
+                    case CAT_GLASSES:  catColor = TFT_ORANGE;  break;
+                    case CAT_MEDICAL:  catColor = TFT_YELLOW;  break;
+                    case CAT_WEARABLE: catColor = TFT_BLUE;    break;
+                    case CAT_AUDIO:    catColor = TFT_MAGENTA; break;
+                }
+                tft.fillCircle(10, y + 6, 5, catColor);
                 tft.setTextColor(TFT_YELLOW);
-                tft.drawString(session->deviceName, 4, y);
-
-                // Stats on same line
-                tft.setTextColor(TFT_WHITE);
-                char statsLine[32];
-                snprintf(statsLine, sizeof(statsLine), "%lu @ %lums",
-                         session->packetsSent, session->intervalMs);
-                tft.drawString(statsLine, 180, y);
+                tft.drawString(session->deviceName, 20, y);
                 y += 16;
 
-                // Remaining count if not infinite
-                if (session->remainingCount > 0) {
-                    char remStr[24];
-                    snprintf(remStr, sizeof(remStr), "  Remaining: %ld", session->remainingCount);
-                    tft.drawString(remStr, 4, y);
-                    y += 14;
+                // MAC Address (BDADDR)
+                char macStr[24];
+                snprintf(macStr, sizeof(macStr), "MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                         session->currentMac[0], session->currentMac[1], session->currentMac[2],
+                         session->currentMac[3], session->currentMac[4], session->currentMac[5]);
+                tft.setTextColor(TFT_WHITE);
+                tft.drawString(macStr, 20, y);
+                y += 14;
+
+                // Company ID and Category
+                char infoStr[40];
+                snprintf(infoStr, sizeof(infoStr), "Company: 0x%04X  Cat: %s",
+                         session->sig->company_id, getCategoryString(session->sig->category));
+                tft.setTextColor(TFT_DARKGREY);
+                tft.drawString(infoStr, 20, y);
+                y += 14;
+
+                // Packet stats
+                char statsStr[48];
+                snprintf(statsStr, sizeof(statsStr), "Packets: %lu  Interval: %lums",
+                         session->packetsSent, session->intervalMs);
+                tft.setTextColor(TFT_GREEN);
+                tft.drawString(statsStr, 20, y);
+                y += 14;
+
+                // MAC mode indicator
+                if (session->randomMacPerPacket) {
+                    tft.setTextColor(TFT_CYAN);
+                    tft.drawString("Random MAC per packet", 20, y);
+                } else {
+                    tft.setTextColor(TFT_GREEN);
+                    tft.drawString("Consistent MAC (session)", 20, y);
                 }
+                y += 18;  // Spacing after MAC mode indicator
             }
         }
 
     } else {
-        // No active TX - show available devices
-        tft.drawString("AVAILABLE DEVICES", 4, y);
+        // No active TX - show tappable device list
+        tft.drawString("SELECT DEVICE TO TX", 4, y);
         y += 16;
 
-        tft.setTextColor(TFT_DARKGREY);  // Gray
-        tft.drawString("Use serial: TX START <device>", 4, y);
-        y += 20;
-
-        tft.setTextColor(TFT_WHITE);
         int txCount = txManager.getTransmittableCount();
-        for (int i = 0; i < min(txCount, 8); i++) {
+
+        // Show scroll indicator
+        if (txCount > TX_ITEMS_PER_PAGE) {
+            char scrollStr[16];
+            snprintf(scrollStr, sizeof(scrollStr), "[%d-%d/%d]",
+                     txScrollOffset + 1,
+                     min(txScrollOffset + TX_ITEMS_PER_PAGE, txCount),
+                     txCount);
+            tft.setTextDatum(TR_DATUM);
+            tft.setTextColor(TFT_DARKGREY);
+            tft.drawString(scrollStr, SCREEN_WIDTH - 4, y - 16);
+            tft.setTextDatum(TL_DATUM);
+        }
+
+        y = TX_LIST_START_Y;
+
+        // Draw device list
+        tft.setTextColor(TFT_WHITE);
+        int displayed = 0;
+        for (int i = txScrollOffset; i < txCount && displayed < TX_ITEMS_PER_PAGE; i++) {
             const device_signature_t* sig = txManager.getTransmittableSignature(i);
             if (sig) {
                 // Category color indicator
                 uint16_t catColor = TFT_WHITE;
                 switch (sig->category) {
-                    case CAT_TRACKER:  catColor = TFT_RED;  break;
+                    case CAT_TRACKER:  catColor = TFT_RED;     break;
                     case CAT_GLASSES:  catColor = TFT_ORANGE;  break;
                     case CAT_MEDICAL:  catColor = TFT_YELLOW;  break;
-                    case CAT_WEARABLE: catColor = TFT_BLUE; break;
-                    case CAT_AUDIO:    catColor = TFT_MAGENTA;    break;
+                    case CAT_WEARABLE: catColor = TFT_BLUE;    break;
+                    case CAT_AUDIO:    catColor = TFT_MAGENTA; break;
                 }
-                tft.fillCircle(12, y + 6, 4, catColor);
+                tft.fillCircle(12, y + 7, 5, catColor);
 
                 tft.setTextColor(TFT_WHITE);
-                tft.drawString(sig->name, 22, y);
+                tft.drawString(sig->name, 24, y);
 
-                char idStr[12];
-                snprintf(idStr, sizeof(idStr), "0x%04X", sig->company_id);
-                tft.setTextColor(TFT_DARKGREY);
-                tft.drawString(idStr, 260, y);
+                y += TX_ITEM_HEIGHT;
+                displayed++;
+            }
+        }
 
-                y += 16;
+        // Scroll indicators
+        if (txCount > TX_ITEMS_PER_PAGE) {
+            if (txScrollOffset > 0) {
+                tft.fillTriangle(SCREEN_WIDTH - 15, TX_LIST_START_Y,
+                                SCREEN_WIDTH - 10, TX_LIST_START_Y - 6,
+                                SCREEN_WIDTH - 5, TX_LIST_START_Y, TFT_YELLOW);
+            }
+            if (txScrollOffset + TX_ITEMS_PER_PAGE < txCount) {
+                int arrowY = TX_LIST_START_Y + TX_ITEMS_PER_PAGE * TX_ITEM_HEIGHT - 5;
+                tft.fillTriangle(SCREEN_WIDTH - 15, arrowY,
+                                SCREEN_WIDTH - 10, arrowY + 6,
+                                SCREEN_WIDTH - 5, arrowY, TFT_YELLOW);
             }
         }
     }
@@ -1327,6 +1430,79 @@ void handleTouch() {
             }
         }
     }
+    // Handle TX screen touches
+    else if (currentScreen == 2 && touchY > STATUS_BAR_HEIGHT) {
+        int activeCount = txManager.getActiveCount();
+        bool confusionActive = txManager.isConfusionActive();
+
+        // Check STOP button (when TX or confusion is active)
+        if ((activeCount > 0 || confusionActive) &&
+            touchX >= TX_STOP_BTN_X && touchX <= TX_STOP_BTN_X + TX_STOP_BTN_W &&
+            touchY >= TX_STOP_BTN_Y && touchY <= TX_STOP_BTN_Y + TX_STOP_BTN_H) {
+
+            // Visual feedback
+            tft.fillRoundRect(TX_STOP_BTN_X, TX_STOP_BTN_Y, TX_STOP_BTN_W, TX_STOP_BTN_H, 4, TFT_WHITE);
+            delay(50);
+
+            if (confusionActive) {
+                txManager.confuseStop();
+                Serial.println("[TX] Confusion stopped via touch");
+            } else {
+                txManager.stopAll();
+                Serial.println("[TX] All TX stopped via touch");
+            }
+            txActive = false;
+            drawTXScreen();
+        }
+        // Handle device selection (when idle)
+        else if (activeCount == 0 && !confusionActive && touchY >= TX_LIST_START_Y) {
+            int txCount = txManager.getTransmittableCount();
+            int listEndY = TX_LIST_START_Y + TX_ITEMS_PER_PAGE * TX_ITEM_HEIGHT;
+
+            // Check for scroll up
+            if (touchY < TX_LIST_START_Y + 25 && txScrollOffset > 0) {
+                txScrollOffset = max(0, txScrollOffset - TX_ITEMS_PER_PAGE);
+                drawTXScreen();
+            }
+            // Check for scroll down
+            else if (touchY > listEndY - 25 && txScrollOffset + TX_ITEMS_PER_PAGE < txCount) {
+                txScrollOffset = min(txCount - TX_ITEMS_PER_PAGE, txScrollOffset + TX_ITEMS_PER_PAGE);
+                if (txScrollOffset < 0) txScrollOffset = 0;
+                drawTXScreen();
+            }
+            // Check for device selection
+            else if (touchY < listEndY) {
+                int itemIdx = (touchY - TX_LIST_START_Y) / TX_ITEM_HEIGHT;
+                int deviceIdx = txScrollOffset + itemIdx;
+
+                if (deviceIdx >= 0 && deviceIdx < txCount) {
+                    const device_signature_t* sig = txManager.getTransmittableSignature(deviceIdx);
+                    if (sig) {
+                        // Visual feedback - highlight selected item
+                        int highlightY = TX_LIST_START_Y + itemIdx * TX_ITEM_HEIGHT;
+                        tft.fillRect(0, highlightY, SCREEN_WIDTH, TX_ITEM_HEIGHT, TFT_DARKGREY);
+                        delay(100);
+
+                        // Stop any active scan
+                        if (scanning) {
+                            pBLEScan->stop();
+                            delay(50);
+                        }
+
+                        // Start TX for selected device (consistent MAC per session)
+                        int result = txManager.startTx(sig->name, TX_DEFAULT_INTERVAL_MS, -1, false);
+                        if (result >= 0) {
+                            txActive = true;
+                            Serial.printf("[TX] Started %s via touch\n", sig->name);
+                        } else {
+                            Serial.printf("[TX] Failed to start %s: %d\n", sig->name, result);
+                        }
+                        drawTXScreen();
+                    }
+                }
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -1381,9 +1557,17 @@ void loop() {
     static uint8_t lastScreen = 255;
     static int lastDetectedCount = -1;
     static uint32_t lastStatusUpdate = 0;
+    static uint32_t lastTxUpdate = 0;
 
     bool screenChanged = (lastScreen != currentScreen);
     bool contentChanged = (currentScreen == 0 && detectedCount != lastDetectedCount);
+
+    // Update TX screen every 500ms when TX is active
+    bool txScreenNeedsUpdate = false;
+    if (currentScreen == 2 && txActive && (millis() - lastTxUpdate > 500)) {
+        txScreenNeedsUpdate = true;
+        lastTxUpdate = millis();
+    }
 
     // Redraw status bar every 2 seconds (for mode indicator updates)
     if (millis() - lastStatusUpdate > 2000) {
@@ -1392,7 +1576,7 @@ void loop() {
     }
 
     // Redraw content only when screen changes or content updates
-    if (screenChanged || contentChanged) {
+    if (screenChanged || contentChanged || txScreenNeedsUpdate) {
         if (screenChanged) {
             drawStatusBar();
         }
