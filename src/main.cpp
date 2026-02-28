@@ -10,6 +10,8 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include <SPI.h>
+#include <XPT2046_Touchscreen.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEScan.h>
@@ -20,9 +22,20 @@
 #include "packet/tx_mgr.h"
 
 // =============================================================================
+// TOUCH SCREEN PINS (CYD uses separate VSPI for touch)
+// =============================================================================
+#define XPT2046_IRQ   36
+#define XPT2046_MOSI  32
+#define XPT2046_MISO  39
+#define XPT2046_CLK   25
+#define XPT2046_CS    33
+
+// =============================================================================
 // GLOBAL OBJECTS
 // =============================================================================
 TFT_eSPI tft = TFT_eSPI();
+SPIClass touchSpi(VSPI);
+XPT2046_Touchscreen ts(XPT2046_CS);  // No IRQ, just poll
 BLEScan* pBLEScan = nullptr;
 
 // State
@@ -73,6 +86,8 @@ void outputDetection(const DetectedDevice* device);
 const device_signature_t* matchSignature(BLEAdvertisedDevice* device);
 void outputTxEvent(const char* event, const char* device, uint32_t intervalMs, int32_t count, uint32_t sent);
 const char* getCategoryString(uint8_t category);
+void initTouch();
+void handleTouch();
 
 // =============================================================================
 // BLE SCAN CALLBACK
@@ -981,12 +996,106 @@ void initSerial() {
     Serial.println("Type HELP for commands");
 }
 
+void initTouch() {
+    // Set up touch CS pin first
+    pinMode(XPT2046_CS, OUTPUT);
+    digitalWrite(XPT2046_CS, HIGH);
+
+    // Initialize touch SPI with explicit pins for CYD
+    // CYD touch uses: CLK=25, MISO=39, MOSI=32, CS=33
+    touchSpi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
+    touchSpi.setFrequency(1000000);  // 1MHz for touch
+
+    // Initialize touchscreen
+    ts.begin(touchSpi);
+    ts.setRotation(0);  // Handle rotation in software mapping
+
+    Serial.println("Touch screen initialized");
+}
+
+// =============================================================================
+// TOUCH HANDLING
+// =============================================================================
+// Touch calibration values for CYD ESP32-2432S028R
+// Raw ranges observed: X=330-3621, Y=424-3740
+#define TOUCH_X_MIN     300
+#define TOUCH_X_MAX     3650
+#define TOUCH_Y_MIN     400
+#define TOUCH_Y_MAX     3750
+
+void handleTouch() {
+    static uint32_t lastTouchTime = 0;
+    const uint32_t TOUCH_DEBOUNCE_MS = 250;
+
+    // Read the touch point
+    TS_Point p = ts.getPoint();
+
+    // Check for valid touch based on pressure (z) value
+    if (p.z < 100) {
+        return;
+    }
+
+    if (millis() - lastTouchTime < TOUCH_DEBOUNCE_MS) {
+        return;
+    }
+
+    // Map raw touch coordinates to screen coordinates for LANDSCAPE mode
+    int16_t touchX = map(p.y, TOUCH_Y_MIN, TOUCH_Y_MAX, 0, SCREEN_WIDTH);
+    int16_t touchY = map(p.x, TOUCH_X_MAX, TOUCH_X_MIN, 0, SCREEN_HEIGHT);
+
+    // Clamp to screen bounds
+    touchX = constrain(touchX, 0, SCREEN_WIDTH - 1);
+    touchY = constrain(touchY, 0, SCREEN_HEIGHT - 1);
+
+    lastTouchTime = millis();
+
+    // Check if touch is in navigation bar area
+    if (touchY >= SCREEN_HEIGHT - NAV_BAR_HEIGHT) {
+        int tabWidth = SCREEN_WIDTH / 4;
+        int newScreen = touchX / tabWidth;
+
+        if (newScreen >= 0 && newScreen <= 3 && newScreen != currentScreen) {
+            currentScreen = newScreen;
+
+            // Visual feedback - brief highlight
+            int tabX = newScreen * tabWidth;
+            tft.fillRect(tabX + 2, SCREEN_HEIGHT - NAV_BAR_HEIGHT + 2,
+                         tabWidth - 4, NAV_BAR_HEIGHT - 4, TFT_YELLOW);
+            delay(50);
+
+            // Force redraw
+            drawNavBar();
+            switch (currentScreen) {
+                case 0: drawScanScreen(); break;
+                case 1: drawFilterScreen(); break;
+                case 2: drawTXScreen(); break;
+                case 3: drawSettingsScreen(); break;
+            }
+
+        }
+    }
+    // Handle filter screen category toggles
+    else if (currentScreen == 1 && touchY > STATUS_BAR_HEIGHT + 24) {
+        int filterY = STATUS_BAR_HEIGHT + 24;
+        int categoryIdx = (touchY - filterY) / 22;
+
+        if (categoryIdx >= 0 && categoryIdx < 5 && touchX < 180) {
+            uint8_t categories[] = {CAT_TRACKER, CAT_GLASSES, CAT_MEDICAL, CAT_WEARABLE, CAT_AUDIO};
+            if (categoryIdx < 5) {
+                categoryFilter ^= categories[categoryIdx];  // Toggle bit
+                drawFilterScreen();
+            }
+        }
+    }
+}
+
 // =============================================================================
 // MAIN
 // =============================================================================
 void setup() {
     initSerial();
     initDisplay();
+    initTouch();
     initBLE();
 
     drawScanScreen();
@@ -996,6 +1105,9 @@ void setup() {
 }
 
 void loop() {
+    // Process touch input
+    handleTouch();
+
     // Process serial commands
     while (Serial.available()) {
         char c = Serial.read();
@@ -1017,32 +1129,43 @@ void loop() {
     txActive = txManager.getActiveCount() > 0 || txManager.isConfusionActive();
 
     // BLE scanning (skip if TX is active to avoid conflicts)
-    if (scanning && !txActive) {
+    // Only scan every 5 seconds to allow touch polling between scans
+    static uint32_t lastScanTime = 0;
+    if (scanning && !txActive && (millis() - lastScanTime > 5000)) {
+        lastScanTime = millis();
         BLEScanResults results = pBLEScan->start(BLE_SCAN_DURATION_SEC, false);
         pBLEScan->clearResults();
     }
 
-    // Update display periodically
-    static uint32_t lastDisplayUpdate = 0;
+    // Update display only when needed
     static uint8_t lastScreen = 255;
-    bool forceRedraw = (lastScreen != currentScreen);
+    static int lastDetectedCount = -1;
+    static uint32_t lastStatusUpdate = 0;
 
-    if (forceRedraw || millis() - lastDisplayUpdate > 500) {
+    bool screenChanged = (lastScreen != currentScreen);
+    bool contentChanged = (currentScreen == 0 && detectedCount != lastDetectedCount);
+
+    // Redraw status bar every 2 seconds (for mode indicator updates)
+    if (millis() - lastStatusUpdate > 2000) {
         drawStatusBar();
+        lastStatusUpdate = millis();
+    }
 
-        // Only redraw content if screen changed or periodic update
-        if (forceRedraw || millis() - lastDisplayUpdate > 500) {
-            switch (currentScreen) {
-                case 0: drawScanScreen(); break;
-                case 1: drawFilterScreen(); break;
-                case 2: drawTXScreen(); break;
-                case 3: drawSettingsScreen(); break;
-            }
-            drawNavBar();
+    // Redraw content only when screen changes or content updates
+    if (screenChanged || contentChanged) {
+        if (screenChanged) {
+            drawStatusBar();
         }
+        switch (currentScreen) {
+            case 0: drawScanScreen(); break;
+            case 1: drawFilterScreen(); break;
+            case 2: drawTXScreen(); break;
+            case 3: drawSettingsScreen(); break;
+        }
+        drawNavBar();
 
-        lastDisplayUpdate = millis();
         lastScreen = currentScreen;
+        lastDetectedCount = detectedCount;
     }
 
     delay(10);
