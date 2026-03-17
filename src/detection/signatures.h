@@ -27,7 +27,7 @@
 // SIGNATURE STRUCTURE
 // =============================================================================
 // Order: name, category, company_id, payload_pattern[8], pattern_length,
-//        pattern_offset, service_uuid, threat_level, flags
+//        pattern_offset, service_uuid, service_uuid_128, threat_level, flags
 typedef struct {
     char name[32];                  // Human-readable device name
     uint8_t category;               // Device category (CAT_*)
@@ -36,9 +36,20 @@ typedef struct {
     uint8_t pattern_length;         // Length of pattern (0 if not used)
     int8_t pattern_offset;          // Offset in payload (-1 for any position)
     uint16_t service_uuid;          // 16-bit Service UUID (0 if not used)
+    uint8_t service_uuid_128[16];   // 128-bit Service UUID (all zeros if not used)
     uint8_t threat_level;           // 1-5 severity rating
     uint32_t flags;                 // Detection flags
 } device_signature_t;
+
+// Flag for 128-bit UUID matching
+#define SIG_FLAG_SERVICE_UUID_128  0x0080  // Match on 128-bit service UUID
+
+// Helper macro for empty 128-bit UUID
+#define UUID128_EMPTY {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+
+// Flipper Zero 128-bit Service UUID (Serial Service)
+// UUID: 8FE5B3D5-2E7F-4A98-2A48-7ACC60FE0000 (little-endian byte order)
+#define UUID128_FLIPPER_SERIAL {0x00,0x00,0xFE,0x60,0xCC,0x7A,0x48,0x2A,0x98,0x4A,0x7F,0x2E,0xD5,0xB3,0xE5,0x8F}
 
 // =============================================================================
 // BLUETOOTH SIG COMPANY IDENTIFIERS
@@ -127,96 +138,104 @@ typedef struct {
 #define COMPANY_LOGITECH        0x0046
 #define COMPANY_GOPRO           0x0301
 
+// Hacking / Research Tools
+#define COMPANY_FLIPPER         0x0499  // Flipper Devices Inc.
+
 // =============================================================================
 // BUILT-IN SIGNATURES
-// Format: {name, category, company_id, {pattern[8]}, pattern_len, offset, svc_uuid, threat, flags}
+// Format: {name, category, company_id, {pattern[8]}, pattern_len, offset, svc_uuid, svc_uuid_128[16], threat, flags}
 // =============================================================================
 static const device_signature_t BUILTIN_SIGNATURES[] = {
     // =========================================================================
     // TRACKERS - High privacy threat, can be used for stalking
     // =========================================================================
-    {"AirTag (Registered)",     CAT_TRACKER, COMPANY_APPLE,    {0x4C,0x00,0x07,0x19,0,0,0,0}, 4,  0, 0, THREAT_SEVERE,   SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
-    {"AirTag (Unregistered)",   CAT_TRACKER, COMPANY_APPLE,    {0x4C,0x00,0x12,0x19,0,0,0,0}, 4,  0, 0, THREAT_SEVERE,   SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
-    {"Samsung SmartTag",        CAT_TRACKER, COMPANY_SAMSUNG,  {0x75,0x00,0x42,0x09,0x01,0,0,0}, 5, 0, 0, THREAT_SEVERE, SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
-    {"Samsung SmartTag2",       CAT_TRACKER, COMPANY_SAMSUNG,  {0x75,0x00,0x42,0x09,0x02,0,0,0}, 5, 0, 0, THREAT_SEVERE, SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
-    {"Tile Tracker",            CAT_TRACKER, COMPANY_TILE,     {0xEC,0xFE,0,0,0,0,0,0}, 2, -1, 0, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
-    {"Tile (Alt)",              CAT_TRACKER, COMPANY_TILE_ALT, {0xED,0xFE,0,0,0,0,0,0}, 2, -1, 0, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
-    {"Chipolo",                 CAT_TRACKER, COMPANY_CHIPOLO,  {0x65,0xFE,0,0,0,0,0,0}, 2, -1, 0, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
-    {"Google Tracker",          CAT_TRACKER, COMPANY_GOOGLE,   {0,0,0,0,0,0,0,0}, 0, -1, 0xFE2C, THREAT_SEVERE,          SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_TRANSMITTABLE},
-    {"Eufy Tracker",            CAT_TRACKER, COMPANY_EUFY,     {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_SEVERE,               SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Pebblebee",               CAT_TRACKER, COMPANY_PEBBLEBEE,{0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_SEVERE,               SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Cube Tracker",            CAT_TRACKER, COMPANY_CUBE,     {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_SEVERE,               SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"AirTag (Registered)",     CAT_TRACKER, COMPANY_APPLE,    {0x4C,0x00,0x07,0x19,0,0,0,0}, 4,  0, 0, UUID128_EMPTY, THREAT_SEVERE,   SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"AirTag (Unregistered)",   CAT_TRACKER, COMPANY_APPLE,    {0x4C,0x00,0x12,0x19,0,0,0,0}, 4,  0, 0, UUID128_EMPTY, THREAT_SEVERE,   SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Samsung SmartTag",        CAT_TRACKER, COMPANY_SAMSUNG,  {0x75,0x00,0x42,0x09,0x01,0,0,0}, 5, 0, 0, UUID128_EMPTY, THREAT_SEVERE, SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Samsung SmartTag2",       CAT_TRACKER, COMPANY_SAMSUNG,  {0x75,0x00,0x42,0x09,0x02,0,0,0}, 5, 0, 0, UUID128_EMPTY, THREAT_SEVERE, SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Tile Tracker",            CAT_TRACKER, COMPANY_TILE,     {0xEC,0xFE,0,0,0,0,0,0}, 2, -1, 0, UUID128_EMPTY, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Tile (Alt)",              CAT_TRACKER, COMPANY_TILE_ALT, {0xED,0xFE,0,0,0,0,0,0}, 2, -1, 0, UUID128_EMPTY, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Chipolo",                 CAT_TRACKER, COMPANY_CHIPOLO,  {0x65,0xFE,0,0,0,0,0,0}, 2, -1, 0, UUID128_EMPTY, THREAT_SEVERE,         SIG_FLAG_COMPANY_ID | SIG_FLAG_PAYLOAD | SIG_FLAG_TRANSMITTABLE},
+    {"Google Tracker",          CAT_TRACKER, COMPANY_GOOGLE,   {0,0,0,0,0,0,0,0}, 0, -1, 0xFE2C, UUID128_EMPTY, THREAT_SEVERE,          SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_TRANSMITTABLE},
+    {"Eufy Tracker",            CAT_TRACKER, COMPANY_EUFY,     {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_SEVERE,               SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Pebblebee",               CAT_TRACKER, COMPANY_PEBBLEBEE,{0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_SEVERE,               SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Cube Tracker",            CAT_TRACKER, COMPANY_CUBE,     {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_SEVERE,               SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+
+    // =========================================================================
+    // HACKING / RESEARCH TOOLS - Security research devices
+    // =========================================================================
+    {"Flipper Zero",            CAT_TRACKER, COMPANY_FLIPPER,  {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_FLIPPER_SERIAL, THREAT_SEVERE,      SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID_128 | SIG_FLAG_NAME_PATTERN},
 
     // =========================================================================
     // SMART GLASSES - Critical privacy threat, cameras/microphones
     // =========================================================================
-    {"Meta Ray-Ban",            CAT_GLASSES, COMPANY_META,      {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Meta Ray-Ban (Tech)",     CAT_GLASSES, COMPANY_META_TECH, {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Meta Ray-Ban (Luxottica)",CAT_GLASSES, COMPANY_LUXOTTICA, {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Snap Spectacles",         CAT_GLASSES, COMPANY_SNAP,      {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Amazon Echo Frames",      CAT_GLASSES, COMPANY_AMAZON,    {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_HIGH,     SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Bose Frames",             CAT_GLASSES, COMPANY_BOSE,      {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_MEDIUM,   SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"Vuzix Blade",             CAT_GLASSES, COMPANY_VUZIX,     {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"XREAL Air",               CAT_GLASSES, COMPANY_XREAL,     {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_HIGH,     SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
-    {"TCL RayNeo",              CAT_GLASSES, COMPANY_TCLTV,     {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_HIGH,     SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Meta Ray-Ban",            CAT_GLASSES, COMPANY_META,      {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Meta Ray-Ban (Tech)",     CAT_GLASSES, COMPANY_META_TECH, {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Meta Ray-Ban (Luxottica)",CAT_GLASSES, COMPANY_LUXOTTICA, {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Snap Spectacles",         CAT_GLASSES, COMPANY_SNAP,      {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Amazon Echo Frames",      CAT_GLASSES, COMPANY_AMAZON,    {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_HIGH,     SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Bose Frames",             CAT_GLASSES, COMPANY_BOSE,      {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_MEDIUM,   SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"Vuzix Blade",             CAT_GLASSES, COMPANY_VUZIX,     {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_CRITICAL, SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"XREAL Air",               CAT_GLASSES, COMPANY_XREAL,     {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_HIGH,     SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
+    {"TCL RayNeo",              CAT_GLASSES, COMPANY_TCLTV,     {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_HIGH,     SIG_FLAG_COMPANY_ID | SIG_FLAG_TRANSMITTABLE},
 
     // =========================================================================
     // MEDICAL DEVICES - Diabetes (CGM, Insulin Pumps)
     // =========================================================================
-    {"Dexcom G6/G7",            CAT_MEDICAL, COMPANY_DEXCOM,    {0,0,0,0,0,0,0,0}, 0, -1, 0xFEBC, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
-    {"Medtronic Pump",          CAT_MEDICAL, COMPANY_MEDTRONIC, {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Omnipod",                 CAT_MEDICAL, COMPANY_INSULET,   {0,0,0,0,0,0,0,0}, 0, -1, 0x1830, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
-    {"Abbott FreeStyle",        CAT_MEDICAL, COMPANY_ABBOTT,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Tandem t:slim",           CAT_MEDICAL, COMPANY_TANDEM,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Senseonics Eversense",    CAT_MEDICAL, COMPANY_SENSEONICS,{0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Ascensia Contour",        CAT_MEDICAL, COMPANY_ASCENSIA,  {0,0,0,0,0,0,0,0}, 0, -1, 0x1808, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
-    {"Roche Accu-Chek",         CAT_MEDICAL, COMPANY_ROCHE,     {0,0,0,0,0,0,0,0}, 0, -1, 0x1808, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
-    {"Ypsomed mylife",          CAT_MEDICAL, COMPANY_YPSOMED,   {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Bigfoot Unity",           CAT_MEDICAL, COMPANY_BIGFOOT,   {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Beta Bionics iLet",       CAT_MEDICAL, COMPANY_BETA_BIONICS,{0,0,0,0,0,0,0,0}, 0, -1, 0,    THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"LifeScan OneTouch",       CAT_MEDICAL, COMPANY_LIFESCAN,  {0,0,0,0,0,0,0,0}, 0, -1, 0x1808, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Dexcom G6/G7",            CAT_MEDICAL, COMPANY_DEXCOM,    {0,0,0,0,0,0,0,0}, 0, -1, 0xFEBC, UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Medtronic Pump",          CAT_MEDICAL, COMPANY_MEDTRONIC, {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Omnipod",                 CAT_MEDICAL, COMPANY_INSULET,   {0,0,0,0,0,0,0,0}, 0, -1, 0x1830, UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Abbott FreeStyle",        CAT_MEDICAL, COMPANY_ABBOTT,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Tandem t:slim",           CAT_MEDICAL, COMPANY_TANDEM,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Senseonics Eversense",    CAT_MEDICAL, COMPANY_SENSEONICS,{0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Ascensia Contour",        CAT_MEDICAL, COMPANY_ASCENSIA,  {0,0,0,0,0,0,0,0}, 0, -1, 0x1808, UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Roche Accu-Chek",         CAT_MEDICAL, COMPANY_ROCHE,     {0,0,0,0,0,0,0,0}, 0, -1, 0x1808, UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Ypsomed mylife",          CAT_MEDICAL, COMPANY_YPSOMED,   {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Bigfoot Unity",           CAT_MEDICAL, COMPANY_BIGFOOT,   {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Beta Bionics iLet",       CAT_MEDICAL, COMPANY_BETA_BIONICS,{0,0,0,0,0,0,0,0}, 0, -1, 0,    UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"LifeScan OneTouch",       CAT_MEDICAL, COMPANY_LIFESCAN,  {0,0,0,0,0,0,0,0}, 0, -1, 0x1808, UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
 
     // =========================================================================
     // MEDICAL DEVICES - Cardiac
     // =========================================================================
-    {"Biotronik Cardiac",       CAT_MEDICAL, COMPANY_BIOTRONIK, {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Boston Scientific",       CAT_MEDICAL, COMPANY_BOSTON_SCI,{0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"AliveCor Kardia",         CAT_MEDICAL, COMPANY_ALIVECOR,  {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Zoll LifeVest",           CAT_MEDICAL, COMPANY_ZOLL,      {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Biotronik Cardiac",       CAT_MEDICAL, COMPANY_BIOTRONIK, {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Boston Scientific",       CAT_MEDICAL, COMPANY_BOSTON_SCI,{0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"AliveCor Kardia",         CAT_MEDICAL, COMPANY_ALIVECOR,  {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Zoll LifeVest",           CAT_MEDICAL, COMPANY_ZOLL,      {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
 
     // =========================================================================
     // MEDICAL DEVICES - Respiratory / Sleep / Other
     // =========================================================================
-    {"ResMed CPAP",             CAT_MEDICAL, COMPANY_RESMED,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Philips CPAP",            CAT_MEDICAL, COMPANY_PHILIPS_MED,{0,0,0,0,0,0,0,0}, 0, -1, 0,     THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Withings Health",         CAT_MEDICAL, COMPANY_WITHINGS,  {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"Omron BP Monitor",        CAT_MEDICAL, COMPANY_OMRON,     {0,0,0,0,0,0,0,0}, 0, -1, 0x1810, THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
-    {"Qardio Heart Health",     CAT_MEDICAL, COMPANY_QARDIO,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
-    {"iHealth Devices",         CAT_MEDICAL, COMPANY_IHEALTH,   {0,0,0,0,0,0,0,0}, 0, -1, 0,      THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"ResMed CPAP",             CAT_MEDICAL, COMPANY_RESMED,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Philips CPAP",            CAT_MEDICAL, COMPANY_PHILIPS_MED,{0,0,0,0,0,0,0,0}, 0, -1, 0,     UUID128_EMPTY, THREAT_MEDIUM, SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Withings Health",         CAT_MEDICAL, COMPANY_WITHINGS,  {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"Omron BP Monitor",        CAT_MEDICAL, COMPANY_OMRON,     {0,0,0,0,0,0,0,0}, 0, -1, 0x1810, UUID128_EMPTY, THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_SERVICE_UUID | SIG_FLAG_MEDICAL},
+    {"Qardio Heart Health",     CAT_MEDICAL, COMPANY_QARDIO,    {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
+    {"iHealth Devices",         CAT_MEDICAL, COMPANY_IHEALTH,   {0,0,0,0,0,0,0,0}, 0, -1, 0,      UUID128_EMPTY, THREAT_LOW,    SIG_FLAG_COMPANY_ID | SIG_FLAG_MEDICAL},
 
     // =========================================================================
     // WEARABLES - Fitness trackers and smartwatches
     // =========================================================================
-    {"Fitbit",                  CAT_WEARABLE, COMPANY_FITBIT,   {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Garmin Watch",            CAT_WEARABLE, COMPANY_GARMIN,   {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Whoop Band",              CAT_WEARABLE, COMPANY_WHOOP,    {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Oura Ring",               CAT_WEARABLE, COMPANY_OURA,     {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Polar Watch",             CAT_WEARABLE, COMPANY_POLAR,    {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Suunto Watch",            CAT_WEARABLE, COMPANY_SUUNTO,   {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Xiaomi Mi Band",          CAT_WEARABLE, COMPANY_XIAOMI,   {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Amazfit Watch",           CAT_WEARABLE, COMPANY_AMAZFIT,  {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Huawei Watch",            CAT_WEARABLE, COMPANY_HUAWEI,   {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Fitbit",                  CAT_WEARABLE, COMPANY_FITBIT,   {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Garmin Watch",            CAT_WEARABLE, COMPANY_GARMIN,   {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Whoop Band",              CAT_WEARABLE, COMPANY_WHOOP,    {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Oura Ring",               CAT_WEARABLE, COMPANY_OURA,     {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Polar Watch",             CAT_WEARABLE, COMPANY_POLAR,    {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Suunto Watch",            CAT_WEARABLE, COMPANY_SUUNTO,   {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Xiaomi Mi Band",          CAT_WEARABLE, COMPANY_XIAOMI,   {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Amazfit Watch",           CAT_WEARABLE, COMPANY_AMAZFIT,  {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Huawei Watch",            CAT_WEARABLE, COMPANY_HUAWEI,   {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
 
     // =========================================================================
     // AUDIO DEVICES
     // =========================================================================
-    {"Sony Audio",              CAT_AUDIO, COMPANY_SONY,        {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Bose Audio",              CAT_AUDIO, COMPANY_BOSE,        {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Jabra Headset",           CAT_AUDIO, COMPANY_JABRA,       {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"JBL Audio",               CAT_AUDIO, COMPANY_JBL,         {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Plantronics",             CAT_AUDIO, COMPANY_PLANTRONICS, {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Skullcandy",              CAT_AUDIO, COMPANY_SKULLCANDY,  {0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
-    {"Bang & Olufsen",          CAT_AUDIO, COMPANY_BANG_OLUFSEN,{0,0,0,0,0,0,0,0}, 0, -1, 0, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Sony Audio",              CAT_AUDIO, COMPANY_SONY,        {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Bose Audio",              CAT_AUDIO, COMPANY_BOSE,        {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Jabra Headset",           CAT_AUDIO, COMPANY_JABRA,       {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"JBL Audio",               CAT_AUDIO, COMPANY_JBL,         {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Plantronics",             CAT_AUDIO, COMPANY_PLANTRONICS, {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Skullcandy",              CAT_AUDIO, COMPANY_SKULLCANDY,  {0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
+    {"Bang & Olufsen",          CAT_AUDIO, COMPANY_BANG_OLUFSEN,{0,0,0,0,0,0,0,0}, 0, -1, 0, UUID128_EMPTY, THREAT_LOW, SIG_FLAG_COMPANY_ID},
 };
 
 #define BUILTIN_SIGNATURE_COUNT (sizeof(BUILTIN_SIGNATURES) / sizeof(device_signature_t))

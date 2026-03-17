@@ -16,6 +16,8 @@
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
+#include <FS.h>
+#include <SPIFFS.h>
 
 #include "config.h"
 #include "detection/signatures.h"
@@ -75,6 +77,12 @@ int cmdIndex = 0;
 // JSON output mode
 bool jsonOutput = SERIAL_JSON_OUTPUT;
 
+// Power save state
+bool powerSaveEnabled = POWERSAVE_ENABLED_DEFAULT;
+uint32_t powerSaveTimeoutSec = POWERSAVE_TIMEOUT_SEC_DEFAULT;
+uint32_t lastNewDeviceTime = 0;     // Timestamp of last new device detection
+bool screenAsleep = false;          // True when screen backlight is off
+
 // =============================================================================
 // FORWARD DECLARATIONS
 // =============================================================================
@@ -95,6 +103,10 @@ void outputTxEvent(const char* event, const char* device, uint32_t intervalMs, i
 const char* getCategoryString(uint8_t category);
 void initTouch();
 void handleTouch();
+void loadPowerSaveConfig();
+void wakeScreen();
+void sleepScreen();
+void checkPowerSave();
 
 // =============================================================================
 // BLE SCAN CALLBACK
@@ -156,6 +168,9 @@ class ScanCallbacks : public BLEAdvertisedDeviceCallbacks {
                 // Output detection event
                 outputDetection(dev);
 
+                // Wake screen if in power save mode (new device detected)
+                wakeScreen();
+
                 // Update display if on scan screen
                 if (currentScreen == 0) {
                     // TODO: Update display
@@ -168,6 +183,14 @@ class ScanCallbacks : public BLEAdvertisedDeviceCallbacks {
 // =============================================================================
 // SIGNATURE MATCHING
 // =============================================================================
+// Helper to check if 128-bit UUID is empty (all zeros)
+static bool isUuid128Empty(const uint8_t* uuid) {
+    for (int i = 0; i < 16; i++) {
+        if (uuid[i] != 0) return false;
+    }
+    return true;
+}
+
 const device_signature_t* matchSignature(BLEAdvertisedDevice* device) {
     uint8_t* payload = device->getPayload();
     size_t payloadLen = device->getPayloadLength();
@@ -176,18 +199,46 @@ const device_signature_t* matchSignature(BLEAdvertisedDevice* device) {
     uint16_t mfgCompanyId = 0;
     bool hasMfgData = false;
 
-    // Parse advertisement data to find manufacturer specific data (type 0xFF)
+    // Extract 16-bit and 128-bit service UUIDs from advertisement
+    uint16_t serviceUuid16 = 0;
+    bool hasServiceUuid16 = false;
+    uint8_t serviceUuid128[16] = {0};
+    bool hasServiceUuid128 = false;
+
+    // Get device name for pattern matching
+    std::string deviceName = device->getName();
+
+    // Parse advertisement data
     size_t idx = 0;
     while (idx < payloadLen) {
         uint8_t len = payload[idx];
         if (len == 0 || idx + len >= payloadLen) break;
 
         uint8_t type = payload[idx + 1];
-        if (type == 0xFF && len >= 3) {
-            // Manufacturer specific data
-            mfgCompanyId = payload[idx + 2] | (payload[idx + 3] << 8);
-            hasMfgData = true;
-            break;
+
+        switch (type) {
+            case 0xFF:  // Manufacturer specific data
+                if (len >= 3) {
+                    mfgCompanyId = payload[idx + 2] | (payload[idx + 3] << 8);
+                    hasMfgData = true;
+                }
+                break;
+
+            case 0x02:  // Incomplete 16-bit Service UUIDs
+            case 0x03:  // Complete 16-bit Service UUIDs
+                if (len >= 3) {
+                    serviceUuid16 = payload[idx + 2] | (payload[idx + 3] << 8);
+                    hasServiceUuid16 = true;
+                }
+                break;
+
+            case 0x06:  // Incomplete 128-bit Service UUIDs
+            case 0x07:  // Complete 128-bit Service UUIDs
+                if (len >= 17) {
+                    memcpy(serviceUuid128, &payload[idx + 2], 16);
+                    hasServiceUuid128 = true;
+                }
+                break;
         }
         idx += len + 1;
     }
@@ -201,6 +252,47 @@ const device_signature_t* matchSignature(BLEAdvertisedDevice* device) {
         if ((sig->flags & SIG_FLAG_COMPANY_ID) && hasMfgData) {
             if (sig->company_id == mfgCompanyId) {
                 matched = true;
+            }
+        }
+
+        // 16-bit Service UUID matching
+        if ((sig->flags & SIG_FLAG_SERVICE_UUID) && hasServiceUuid16 && sig->service_uuid != 0) {
+            if (sig->service_uuid == serviceUuid16) {
+                if (sig->flags & SIG_FLAG_EXACT_MATCH) {
+                    matched = matched && true;
+                } else {
+                    matched = true;
+                }
+            }
+        }
+
+        // 128-bit Service UUID matching
+        if ((sig->flags & SIG_FLAG_SERVICE_UUID_128) && hasServiceUuid128 && !isUuid128Empty(sig->service_uuid_128)) {
+            if (memcmp(sig->service_uuid_128, serviceUuid128, 16) == 0) {
+                if (sig->flags & SIG_FLAG_EXACT_MATCH) {
+                    matched = matched && true;
+                } else {
+                    matched = true;
+                }
+            }
+        }
+
+        // Device name pattern matching (case-insensitive contains)
+        if ((sig->flags & SIG_FLAG_NAME_PATTERN) && deviceName.length() > 0) {
+            // Convert both to lowercase for case-insensitive matching
+            std::string lowerName = deviceName;
+            std::string lowerSig = sig->name;
+            for (auto& c : lowerName) c = tolower(c);
+            for (auto& c : lowerSig) c = tolower(c);
+
+            // Check if device name contains signature name or vice versa
+            if (lowerName.find(lowerSig) != std::string::npos ||
+                lowerSig.find(lowerName) != std::string::npos) {
+                if (sig->flags & SIG_FLAG_EXACT_MATCH) {
+                    matched = matched && true;
+                } else {
+                    matched = true;
+                }
             }
         }
 
@@ -352,6 +444,12 @@ void processSerialCommand(const char* cmd) {
         Serial.println("Other:");
         Serial.println("  JSON <ON|OFF>     - Toggle JSON output");
         Serial.println("  DISPLAY SCREEN <N> - Switch screen (0-3)");
+        Serial.println("");
+        Serial.println("Power Save:");
+        Serial.println("  POWERSAVE STATUS  - Show power save status");
+        Serial.println("  POWERSAVE ON/OFF  - Enable/disable power save");
+        Serial.println("  POWERSAVE TIMEOUT <sec> - Set timeout (10-3600s)");
+        Serial.println("  POWERSAVE WAKE    - Wake screen immediately");
         Serial.println("OK");
     }
     else if (cmdStr == "VERSION") {
@@ -634,6 +732,42 @@ void processSerialCommand(const char* cmd) {
         msg.trim();
         // TODO: Display overlay message
         Serial.println("OK");
+    }
+
+    // =========================================================================
+    // POWER SAVE COMMANDS
+    // =========================================================================
+    else if (cmdStr == "POWERSAVE STATUS") {
+        Serial.printf("Power Save: %s\n", powerSaveEnabled ? "ENABLED" : "DISABLED");
+        Serial.printf("Timeout: %lu seconds (%lu minutes)\n", powerSaveTimeoutSec, powerSaveTimeoutSec / 60);
+        Serial.printf("Screen: %s\n", screenAsleep ? "SLEEPING" : "AWAKE");
+        uint32_t timeSinceNew = (millis() - lastNewDeviceTime) / 1000;
+        Serial.printf("Time since new device: %lu seconds\n", timeSinceNew);
+        Serial.println("OK");
+    }
+    else if (cmdStr == "POWERSAVE ON") {
+        powerSaveEnabled = true;
+        Serial.println("OK Power save enabled");
+    }
+    else if (cmdStr == "POWERSAVE OFF") {
+        powerSaveEnabled = false;
+        if (screenAsleep) {
+            wakeScreen();
+        }
+        Serial.println("OK Power save disabled");
+    }
+    else if (cmdStr.startsWith("POWERSAVE TIMEOUT ")) {
+        uint32_t timeout = cmdStr.substring(18).toInt();
+        if (timeout >= 10 && timeout <= 3600) {
+            powerSaveTimeoutSec = timeout;
+            Serial.printf("OK Power save timeout set to %lu seconds\n", powerSaveTimeoutSec);
+        } else {
+            Serial.println("ERROR 101 Timeout must be 10-3600 seconds");
+        }
+    }
+    else if (cmdStr == "POWERSAVE WAKE") {
+        wakeScreen();
+        Serial.println("OK Screen awakened");
     }
 
     // =========================================================================
@@ -1337,6 +1471,14 @@ void handleTouch() {
         return;
     }
 
+    // Wake screen on any touch (reset power save timer)
+    if (screenAsleep) {
+        wakeScreen();
+        lastTouchTime = millis();
+        return;  // Don't process this touch as navigation
+    }
+    lastNewDeviceTime = millis();  // Reset power save timer on touch
+
     // Map raw touch coordinates to screen coordinates for LANDSCAPE mode
     int16_t touchX = map(p.y, TOUCH_Y_MIN, TOUCH_Y_MAX, 0, SCREEN_WIDTH);
     int16_t touchY = map(p.x, TOUCH_X_MAX, TOUCH_X_MIN, 0, SCREEN_HEIGHT);
@@ -1552,21 +1694,139 @@ void handleTouch() {
 }
 
 // =============================================================================
+// POWER SAVE FUNCTIONS
+// =============================================================================
+void loadPowerSaveConfig() {
+    // Try to mount SPIFFS
+    if (!SPIFFS.begin(true)) {
+        Serial.println("SPIFFS mount failed, using default power save settings");
+        return;
+    }
+
+    // Check if config file exists
+    if (!SPIFFS.exists(POWERSAVE_CONFIG_FILE)) {
+        Serial.println("No config file found, using defaults");
+        // Create default config file
+        fs::File configFile = SPIFFS.open(POWERSAVE_CONFIG_FILE, "w");
+        if (configFile) {
+            configFile.println("# BLEPTD Power Save Configuration");
+            configFile.println("# powersave_enabled: true/false");
+            configFile.println("# powersave_timeout_sec: seconds until screen sleep (default 300 = 5 min)");
+            configFile.println("");
+            configFile.println("powersave_enabled=true");
+            configFile.println("powersave_timeout_sec=300");
+            configFile.close();
+            Serial.println("Created default config file: " POWERSAVE_CONFIG_FILE);
+        }
+        return;
+    }
+
+    // Read config file
+    fs::File configFile = SPIFFS.open(POWERSAVE_CONFIG_FILE, "r");
+    if (!configFile) {
+        Serial.println("Failed to open config file");
+        return;
+    }
+
+    Serial.println("Loading power save config...");
+
+    while (configFile.available()) {
+        String line = configFile.readStringUntil('\n');
+        line.trim();
+
+        // Skip comments and empty lines
+        if (line.length() == 0 || line.startsWith("#")) {
+            continue;
+        }
+
+        // Parse key=value
+        int eqPos = line.indexOf('=');
+        if (eqPos <= 0) continue;
+
+        String key = line.substring(0, eqPos);
+        String value = line.substring(eqPos + 1);
+        key.trim();
+        value.trim();
+
+        if (key == "powersave_enabled") {
+            powerSaveEnabled = (value == "true" || value == "1" || value == "yes");
+            Serial.printf("  powersave_enabled = %s\n", powerSaveEnabled ? "true" : "false");
+        }
+        else if (key == "powersave_timeout_sec") {
+            powerSaveTimeoutSec = value.toInt();
+            if (powerSaveTimeoutSec < 10) powerSaveTimeoutSec = 10;  // Minimum 10 seconds
+            if (powerSaveTimeoutSec > 3600) powerSaveTimeoutSec = 3600;  // Maximum 1 hour
+            Serial.printf("  powersave_timeout_sec = %lu\n", powerSaveTimeoutSec);
+        }
+    }
+
+    configFile.close();
+    Serial.println("Power save config loaded");
+}
+
+void wakeScreen() {
+    if (screenAsleep) {
+        digitalWrite(TFT_BL_PIN, HIGH);
+        screenAsleep = false;
+        Serial.println("[PowerSave] Screen woke up - new device detected");
+
+        // Force redraw of current screen
+        switch (currentScreen) {
+            case 0: drawScanScreen(); break;
+            case 1: drawFilterScreen(); break;
+            case 2: drawTXScreen(); break;
+            case 3: drawSettingsScreen(); break;
+            case 4: drawDetailScreen(); break;
+        }
+        drawStatusBar();
+        if (currentScreen != 4) {
+            drawNavBar();
+        }
+    }
+    lastNewDeviceTime = millis();  // Reset timer
+}
+
+void sleepScreen() {
+    if (!screenAsleep) {
+        digitalWrite(TFT_BL_PIN, LOW);
+        screenAsleep = true;
+        Serial.println("[PowerSave] Screen sleeping - no new devices");
+    }
+}
+
+void checkPowerSave() {
+    if (!powerSaveEnabled) return;
+    if (txActive) return;  // Don't sleep during TX
+
+    uint32_t elapsed = (millis() - lastNewDeviceTime) / 1000;
+    if (elapsed >= powerSaveTimeoutSec && !screenAsleep) {
+        sleepScreen();
+    }
+}
+
+// =============================================================================
 // MAIN
 // =============================================================================
 void setup() {
     initSerial();
+    loadPowerSaveConfig();  // Load power save settings from SPIFFS
     initDisplay();
     initTouch();
     initBLE();
 
     drawScanScreen();
 
+    // Initialize power save timer
+    lastNewDeviceTime = millis();
+
     Serial.println("Initialization complete. Starting scan...");
     scanning = true;
 }
 
 void loop() {
+    // Check power save (screen sleep/wake)
+    checkPowerSave();
+
     // Process touch input
     handleTouch();
 

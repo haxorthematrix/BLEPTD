@@ -73,6 +73,15 @@
 #define DETECTED_DEVICES_MAX    64
 
 // =============================================================================
+// POWER SAVE SETTINGS
+// =============================================================================
+// Power save mode - screen turns off after timeout with no new devices detected
+// Configuration is loaded from /config.txt on SPIFFS at boot
+#define POWERSAVE_ENABLED_DEFAULT       true    // Power save enabled by default
+#define POWERSAVE_TIMEOUT_SEC_DEFAULT   300     // 5 minutes (300 seconds)
+#define POWERSAVE_CONFIG_FILE           "/config.txt"
+
+// =============================================================================
 // DEVICE CATEGORIES
 // =============================================================================
 typedef enum {

@@ -1,0 +1,12 @@
+# BLEPTD Power Save Configuration
+# This file is loaded at boot from SPIFFS
+# Edit values below and upload to SPIFFS using:
+#   pio run -t uploadfs
+
+# Enable/disable power save mode (true/false)
+# When enabled, screen turns off after timeout with no new devices
+powersave_enabled=true
+
+# Timeout in seconds before screen sleeps (10-3600)
+# Default: 300 seconds = 5 minutes
+powersave_timeout_sec=300
