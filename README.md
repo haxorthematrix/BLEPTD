@@ -10,7 +10,7 @@ ESP32 CYD firmware for detecting Bluetooth Low Energy devices that may compromis
 
 BLEPTD is a portable BLE surveillance detection platform that runs on the ESP32-based "Cheap Yellow Display" (CYD). It detects and identifies:
 
-- **Tracking Devices** - AirTags, Tile, SmartTags, Chipolo, etc.
+- **Tracking Devices** - AirTags, Tile, SmartTags, Chipolo, Flipper Zero, etc.
 - **Smart Glasses** - Meta Ray-Ban, Snap Spectacles, Echo Frames
 - **Medical Devices** - CGMs, insulin pumps, pacemakers (for VIP security assessments)
 - **Wearables** - Smartwatches, fitness trackers
@@ -19,10 +19,12 @@ BLEPTD is a portable BLE surveillance detection platform that runs on the ESP32-
 ## Features
 
 - **Real-time BLE scanning** with signature-based device identification
+- **128-bit UUID detection** for devices like Flipper Zero
 - **Interactive touchscreen UI** for field operation
 - **Category filtering** to focus on specific device types
 - **TX Simulation mode** for testing and countermeasures
 - **Confusion mode** to generate false positives
+- **Power save mode** - screen auto-off after 5 min idle, wakes on new detection
 - **Serial command interface** for automation and logging
 - **JSON output** for integration with other tools
 
@@ -94,7 +96,23 @@ SCAN LIST       - List all detected devices
 
 FILTER SET <category> <on|off>
 JSON <on|off>   - Toggle JSON output mode
+
+POWERSAVE STATUS        - Show power save status
+POWERSAVE ON|OFF        - Enable/disable power save
+POWERSAVE TIMEOUT <sec> - Set idle timeout (10-3600s)
+POWERSAVE WAKE          - Wake screen immediately
 ```
+
+### Power Save Configuration
+
+Power save settings are stored in `/config.txt` on SPIFFS:
+
+```
+powersave_enabled=true
+powersave_timeout_sec=300
+```
+
+Upload config with: `pio run -t uploadfs`
 
 ### Example Output
 
@@ -123,9 +141,11 @@ JSON mode:
 
 BLEPTD identifies devices using multiple BLE advertisement fields:
 
-1. **Company Identifier** - Mandatory 16-bit ID in manufacturer-specific data
+1. **Company Identifier** - 16-bit Bluetooth SIG assigned ID in manufacturer-specific data
 2. **Payload Patterns** - Signature byte sequences at specific offsets
-3. **Service UUIDs** - 16-bit or 128-bit service identifiers
+3. **16-bit Service UUIDs** - Standard BLE service identifiers
+4. **128-bit Service UUIDs** - Custom service identifiers (e.g., Flipper Zero)
+5. **Device Name Matching** - Case-insensitive pattern matching
 
 This approach works even when devices use randomized MAC addresses.
 

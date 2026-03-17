@@ -26,7 +26,9 @@
 | List scrolling | ✓ | Scroll through long device lists with indicators |
 | BLE scanning | ✓ | Detection with signature matching, 5-second intervals |
 | Signature database | ✓ | 54 devices: 11 trackers, 9 glasses, 18 medical, 9 wearables, 7 audio |
-| Detection engine | ✓ | Company ID, payload pattern, service UUID matching |
+| Detection engine | ✓ | Company ID, payload pattern, 16-bit/128-bit service UUID, device name matching |
+| 128-bit UUID support | ✓ | Full 128-bit service UUID detection for devices like Flipper Zero |
+| Power save mode | ✓ | Screen auto-off after 5 min idle, wakes on new device detection |
 | TX manager | ✓ | Single device transmission with consistent MAC per session |
 | TX touch controls | ✓ | Tap device to start TX, STOP button, detailed TX info display |
 | TX display info | ✓ | Shows device name, MAC address, company ID, category, packet count |
@@ -39,12 +41,12 @@
 
 | Category | Detection | Transmittable | Devices |
 |----------|-----------|---------------|---------|
-| Trackers | 11 | 11 | AirTag (2), SmartTag (2), Tile (2), Chipolo, Google, Eufy, Pebblebee, Cube |
+| Trackers | 12 | 11 | AirTag (2), SmartTag (2), Tile (2), Chipolo, Google, Eufy, Pebblebee, Cube, Flipper Zero |
 | Glasses | 9 | 9 | Meta Ray-Ban (3), Snap Spectacles, Echo Frames, Bose Frames, Vuzix, XREAL, TCL |
 | Medical | 18 | 0 | Diabetes (12): Dexcom, Medtronic, Omnipod, Abbott, Tandem, etc. Cardiac (4), Respiratory (2) |
 | Wearables | 9 | 0 | Fitbit, Garmin, Whoop, Oura, Polar, Suunto, Xiaomi, Amazfit, Huawei |
 | Audio | 7 | 0 | Sony, Bose, Jabra, JBL, Plantronics, Skullcandy, Bang & Olufsen |
-| **Total** | **54** | **20** | |
+| **Total** | **55** | **20** | |
 
 ---
 
@@ -130,6 +132,11 @@ FILTER SET <cat> <on|off> - Toggle category filter
 FILTER LIST             - Show current filters
 
 JSON ON|OFF             - Toggle JSON output mode
+
+POWERSAVE STATUS        - Show power save status
+POWERSAVE ON|OFF        - Enable/disable power save
+POWERSAVE TIMEOUT <sec> - Set timeout (10-3600 seconds)
+POWERSAVE WAKE          - Wake screen immediately
 ```
 
 ---
@@ -151,6 +158,7 @@ JSON ON|OFF             - Toggle JSON output mode
 | Eufy Tracker | 0x0757 | - | Anker ecosystem |
 | Pebblebee | 0x0822 | - | FindMy compatible |
 | Cube Tracker | 0x0843 | - | Cube devices |
+| Flipper Zero | 0x0499 | 128-bit UUID + name pattern | Security research tool |
 
 ### Smart Glasses (9 devices) - All Transmittable
 
@@ -234,13 +242,40 @@ JSON ON|OFF             - Toggle JSON output mode
 | Feature | Priority | Notes |
 |---------|----------|-------|
 | RSSI threshold slider | Low | Touch-adjustable on filter screen |
-| Configuration persistence | Medium | Save/load settings to flash |
 | SD card logging | Low | Export scan logs to SD |
 | Custom signature management | Low | SIG ADD/DELETE via serial |
 | Export functions | Low | SCAN EXPORT csv/json |
 | FreeRTOS tasks | Low | Multi-core task distribution |
 | Brightness control | Low | Display brightness adjustment |
 | Sound alerts | Low | Buzzer feedback |
+
+### Power Save Configuration
+
+Power save mode is configured via `/config.txt` on SPIFFS. The file is created automatically on first boot with default values.
+
+**Configuration file format:**
+```
+# BLEPTD Power Save Configuration
+powersave_enabled=true
+powersave_timeout_sec=300
+```
+
+**Behavior:**
+- Screen backlight turns off after the configured timeout (default: 5 minutes) if no new devices are detected
+- Screen wakes immediately when a new device is detected
+- Screen wakes on any touch input
+- Power save is disabled during TX operations
+
+**Serial commands:**
+- `POWERSAVE STATUS` - Show current power save state
+- `POWERSAVE ON/OFF` - Enable/disable power save
+- `POWERSAVE TIMEOUT <sec>` - Set timeout (10-3600 seconds)
+- `POWERSAVE WAKE` - Wake screen immediately
+
+**To upload config to device:**
+```bash
+pio run -t uploadfs
+```
 
 ---
 
@@ -317,8 +352,9 @@ BLEPTD uses multiple BLE advertisement field analysis techniques:
 |--------|-------|-------------|
 | **Company ID** | Manufacturer Specific Data (0xFF) | 16-bit Bluetooth SIG assigned company identifier |
 | **Payload Pattern** | Raw advertisement bytes | Signature matching against known byte sequences |
-| **Service UUID** | Complete/Incomplete Service UUIDs | 16-bit or 128-bit service identifiers |
-| **Device Name** | Complete/Shortened Local Name | String pattern matching (fallback method) |
+| **16-bit Service UUID** | Complete/Incomplete Service UUIDs (0x02/0x03) | Standard BLE service identifiers |
+| **128-bit Service UUID** | Complete/Incomplete Service UUIDs (0x06/0x07) | Custom service identifiers (e.g., Flipper Zero) |
+| **Device Name** | Complete/Shortened Local Name | Case-insensitive pattern matching |
 
 ### 3.2 Device Categories
 
@@ -397,18 +433,20 @@ typedef struct {
     uint8_t pattern_length;         // Length of pattern (0 if not used)
     uint8_t pattern_offset;         // Offset in payload (-1 for any position)
     uint16_t service_uuid;          // 16-bit Service UUID (0 if not used)
+    uint8_t service_uuid_128[16];   // 128-bit Service UUID (all zeros if not used)
     uint8_t threat_level;           // 1-5 severity rating
     uint32_t flags;                 // Detection flags (see below)
 } device_signature_t;
 
 // Detection flags
-#define SIG_FLAG_COMPANY_ID     0x0001  // Match on company ID
-#define SIG_FLAG_PAYLOAD        0x0002  // Match on payload pattern
-#define SIG_FLAG_SERVICE_UUID   0x0004  // Match on service UUID
-#define SIG_FLAG_NAME_PATTERN   0x0008  // Match on device name
-#define SIG_FLAG_EXACT_MATCH    0x0010  // All specified fields must match
-#define SIG_FLAG_TRANSMITTABLE  0x0020  // Can simulate this device
-#define SIG_FLAG_MEDICAL        0x0040  // Medical device (special handling)
+#define SIG_FLAG_COMPANY_ID       0x0001  // Match on company ID
+#define SIG_FLAG_PAYLOAD          0x0002  // Match on payload pattern
+#define SIG_FLAG_SERVICE_UUID     0x0004  // Match on 16-bit service UUID
+#define SIG_FLAG_NAME_PATTERN     0x0008  // Match on device name
+#define SIG_FLAG_EXACT_MATCH      0x0010  // All specified fields must match
+#define SIG_FLAG_TRANSMITTABLE    0x0020  // Can simulate this device
+#define SIG_FLAG_MEDICAL          0x0040  // Medical device (special handling)
+#define SIG_FLAG_SERVICE_UUID_128 0x0080  // Match on 128-bit service UUID
 ```
 
 ---
@@ -1156,6 +1194,7 @@ Company IDs used in the signature database:
 | 0xFE65 | Chipolo d.o.o. |
 | 0x0757 | Eufy (Anker) |
 | 0x0843 | Cube |
+| 0x0499 | Flipper Devices Inc. |
 
 ### Smart Glasses / AR
 | Company ID | Company Name |
