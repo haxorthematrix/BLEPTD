@@ -30,13 +30,24 @@ BLEPTD is a portable BLE surveillance detection platform that runs on the ESP32-
 
 ## Hardware Requirements
 
-- ESP32 "Cheap Yellow Display" (CYD) 2.8"
-  - ESP32-WROOM-32 module
-  - 2.8" ILI9341 TFT LCD (320x240)
-  - XPT2046 resistive touchscreen
-  - MicroSD card slot
+ESP32 "Cheap Yellow Display" (CYD) 2.8", available on AliExpress / Amazon for
+~$10-15 USD. Both shipping revisions are supported:
 
-Available on AliExpress for ~$10-15 USD.
+| Variant | Connector | TFT controller | Board ID |
+|---------|-----------|----------------|----------|
+| Original | micro-USB only | ILI9341 | ESP32-2432S028R (v1/v2) |
+| Newer | USB-C (sometimes + micro-USB) | ILI9342 | ESP32-2432S028R v3 |
+
+Shared specs on both revisions:
+- ESP32-WROOM-32 module
+- 2.8" TFT LCD (320x240)
+- XPT2046 resistive touchscreen
+- MicroSD card slot
+
+> **You must pick the matching firmware/build env for your board.** Flashing the
+> ILI9341 firmware to an ILI9342 board (or vice versa) results in a fully white
+> screen with the backlight on — the controller silently ignores the wrong
+> init sequence. See [Identifying your CYD variant](#identifying-your-cyd-variant).
 
 ## Installation
 
@@ -53,21 +64,59 @@ Available on AliExpress for ~$10-15 USD.
 git clone https://github.com/haxorthematrix/BLEPTD.git
 cd BLEPTD
 
-# Build and upload with PlatformIO
-pio run -t upload
+# Build and upload with PlatformIO — pick the env that matches your CYD:
+pio run -e cyd_microusb -t upload   # micro-USB CYD  (ILI9341 driver)
+pio run -e cyd_usbc     -t upload   # USB-C CYD      (ILI9342 driver)
 
 # Monitor serial output
 pio device monitor
 ```
 
+If you are not sure which board you have, see
+[Identifying your CYD variant](#identifying-your-cyd-variant) below.
+`pio run -t upload` (no `-e`) still builds the micro-USB variant for backwards
+compatibility via the `cyd` env alias.
+
+### Prebuilt binaries
+
+Each release under [`releases/`](releases/) ships two firmware images, one per
+variant — flash the one that matches your board. The latest release
+([v1.0.2](releases/v1.0.2/)) is the first to include a working USB-C image.
+
 ### Arduino IDE
 
 1. Install ESP32 board support via Board Manager
 2. Install TFT_eSPI library
-3. Copy `User_Setup.h` from `lib/TFT_eSPI/` to your TFT_eSPI library folder
+3. Copy the matching `User_Setup.h` for your variant (ILI9341 for micro-USB,
+   ILI9342 + `TFT_RGB_ORDER TFT_RGB` + `TFT_INVERSION_ON` for USB-C) into your
+   TFT_eSPI library folder, and for the USB-C variant construct the display
+   object as `TFT_eSPI tft = TFT_eSPI(240, 320);` so `setRotation(1)` produces
+   the correct 320×240 landscape geometry
 4. Open `src/main.cpp`, rename to `.ino`
 5. Select "ESP32 Dev Module" board
 6. Upload
+
+### Identifying your CYD variant
+
+The two boards are mechanically and electrically almost identical — the
+controller chip is the only thing that changes — so the simplest tell is the
+USB connector(s):
+
+- **Single micro-USB port** → ILI9341 → use `cyd_microusb` /
+  `BLEPTD_v*_microusb.bin`
+- **USB-C port** (alone, or alongside a second micro-USB) → ILI9342 → use
+  `cyd_usbc` / `BLEPTD_v*_usbc.bin`
+
+After flashing, the boot banner and the `VERSION` serial command confirm which
+variant you built for:
+
+```
+BLEPTD v1.0.2 (USB-C/ILI9342)
+BLEPTD v1.0.2 (microUSB/ILI9341)
+```
+
+A fully white screen with the backlight on is the universal symptom of flashing
+the wrong variant.
 
 ## Usage
 

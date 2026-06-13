@@ -35,7 +35,19 @@
 // =============================================================================
 // GLOBAL OBJECTS
 // =============================================================================
+// USB-C CYD (ILI9342): TFT_eSPI's ILI9341_Defines.h forces TFT_WIDTH=320 /
+// TFT_HEIGHT=240 (landscape native) for the ILI9342, but the rotation table
+// in TFT_eSPI is written assuming portrait-native init dimensions like the
+// ILI9341. The result is that setRotation(1) gives _width=240/_height=320
+// instead of 320/240, leaving the right ~80 px of the panel unaddressed and
+// rendering content in portrait orientation. Forcing the constructor to
+// (240, 320) — i.e. lie about the chip being portrait-native — makes
+// setRotation(1) swap correctly to 320x240 landscape on the ILI9342.
+#if defined(BLEPTD_VARIANT_USBC)
+TFT_eSPI tft = TFT_eSPI(240, 320);
+#else
 TFT_eSPI tft = TFT_eSPI();
+#endif
 SPIClass touchSpi(VSPI);
 XPT2046_Touchscreen ts(XPT2046_CS);  // No IRQ, just poll
 BLEScan* pBLEScan = nullptr;
@@ -453,7 +465,7 @@ void processSerialCommand(const char* cmd) {
         Serial.println("OK");
     }
     else if (cmdStr == "VERSION") {
-        Serial.printf("BLEPTD v%s\n", BLEPTD_VERSION);
+        Serial.printf("BLEPTD v%s (%s)\n", BLEPTD_VERSION, BLEPTD_VARIANT_STRING);
         Serial.println("OK");
     }
     else if (cmdStr == "STATUS") {
@@ -1422,7 +1434,7 @@ void initSerial() {
     Serial.begin(SERIAL_BAUD_RATE);
     Serial.println();
     Serial.println("=================================");
-    Serial.printf("BLEPTD v%s\n", BLEPTD_VERSION);
+    Serial.printf("BLEPTD v%s (%s)\n", BLEPTD_VERSION, BLEPTD_VARIANT_STRING);
     Serial.println("BLE Privacy Threat Detector");
     Serial.println("=================================");
     Serial.println("Type HELP for commands");

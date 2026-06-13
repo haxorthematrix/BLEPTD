@@ -10,11 +10,28 @@
 // VERSION
 // =============================================================================
 #ifndef BLEPTD_VERSION
-#define BLEPTD_VERSION "1.0.0"
+#define BLEPTD_VERSION "1.0.2"
 #endif
 
 // =============================================================================
-// HARDWARE PIN DEFINITIONS (CYD 2.8")
+// HARDWARE VARIANT
+// =============================================================================
+// The 2.8" CYD ships in two revisions with different TFT controllers:
+//   BLEPTD_VARIANT_MICROUSB -> ESP32-2432S028R   (ILI9341 driver)
+//   BLEPTD_VARIANT_USBC     -> ESP32-2432S028R v3 (ILI9342 driver, RGB, inverted)
+// One of these is selected at compile time via platformio.ini.
+#if !defined(BLEPTD_VARIANT_MICROUSB) && !defined(BLEPTD_VARIANT_USBC)
+#define BLEPTD_VARIANT_MICROUSB 1
+#endif
+
+#if defined(BLEPTD_VARIANT_USBC)
+#define BLEPTD_VARIANT_STRING "USB-C/ILI9342"
+#else
+#define BLEPTD_VARIANT_STRING "microUSB/ILI9341"
+#endif
+
+// =============================================================================
+// HARDWARE PIN DEFINITIONS (CYD 2.8" — identical on both revisions)
 // =============================================================================
 
 // TFT Display (ILI9341)
@@ -38,7 +55,7 @@
 // =============================================================================
 #define SCREEN_WIDTH    320
 #define SCREEN_HEIGHT   240
-#define SCREEN_ROTATION 1   // Landscape (90° rotation)
+#define SCREEN_ROTATION 1   // Both variants use rotation 1 for landscape
 
 // UI Layout
 #define STATUS_BAR_HEIGHT   20
